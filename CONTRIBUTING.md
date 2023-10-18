@@ -48,7 +48,7 @@ find an issue to work on, you are welcome to open a PR with a fix.
 - Using the command line:
   - [Fork the repo](https://docs.github.com/en/github/getting-started-with-github/fork-a-repo#fork-an-example-repository) so that you can make your changes without affecting the original project until you're ready to merge them.
 
-3. Run `make install` from within the repo to get set up
+3. Run `pip install -r requirement` to install the dependencies.
 
 4. Create a working branch and start with your changes!
 
