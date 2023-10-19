@@ -1,0 +1,18 @@
+domsdatabasen:
+  url: https://domsdatabasen.dk/#sag
+
+paths:
+  download_dir: download_tmp/
+  data_raw_dir: data/raw/
+
+file_names:
+  tabular_data: tabular_data.json
+  pdf_document: document.pdf
+
+messages:
+  give_correct_inputs: >
+    Please specify either a case ID using the case_id 
+    argument or use --scrape_all to scrape all cases
+
+sleep: 5
+

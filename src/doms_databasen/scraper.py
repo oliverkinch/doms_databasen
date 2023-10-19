@@ -5,32 +5,25 @@ import time
 from pathlib import Path
 
 from selenium import webdriver
+from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
-from selenium.common.exceptions import NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
 
-
-from .constants import (
-    DATA_RAW_DIR,
-    DOWNLOAD_DIR,
-    URL_MAIN,
-    WAIT_TIME,
-    XPATHS,
-    XPATHS_TABULAR_DATA,
-    TABULAR_DATA_FILE_NAME,
-    PDF_DOCUMENT_FILE_NAME,
-)
+from .constants import XPATHS, XPATHS_TABULAR_DATA
 from .utils import save_dict_to_json
 
 logger = logging.getLogger(__name__)
 
 
 class DomsDatabasenScraper:
-    def __init__(self):
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.download_dir = Path(self.cfg.paths.download_dir)
+        self.data_raw_dir = Path(self.cfg.paths.data_raw_dir)
         self.intialize_downloader_folder()
         self.driver = self.start_driver()
 
@@ -48,7 +41,7 @@ class DomsDatabasenScraper:
                 True if case has successfully been scraped or already
                 has been scraped. False if case does not exist.
         """
-        case_url = f"{URL_MAIN}/{case_id}"
+        case_url = f"{self.cfg.domsdatabasen.url}/{case_id}"
         self.driver.get(case_url)
         # Wait for page to load
         time.sleep(1)
@@ -58,7 +51,7 @@ class DomsDatabasenScraper:
             logger.info(f"Case {case_id} does not exist")
             return False
 
-        case_dir = DATA_RAW_DIR / case_id
+        case_dir = self.data_raw_dir / case_id
         if case_dir.exists():
             if force:
                 shutil.rmtree(case_dir)
@@ -70,7 +63,7 @@ class DomsDatabasenScraper:
 
         self._download_pdf(case_dir)
         tabular_data = self._get_tabular_data()
-        save_dict_to_json(tabular_data, case_dir / TABULAR_DATA_FILE_NAME)
+        save_dict_to_json(tabular_data, case_dir / self.cfg.file_names.tabular_data)
 
         return True
 
@@ -88,8 +81,7 @@ class DomsDatabasenScraper:
                 break
             case_id += 1
 
-    @staticmethod
-    def start_driver() -> webdriver.Chrome:
+    def start_driver(self) -> webdriver.Chrome:
         """Starts a Chrome webdriver with
 
         Returns:
@@ -101,7 +93,7 @@ class DomsDatabasenScraper:
         options.add_experimental_option(
             "prefs",
             {
-                "download.default_directory": os.path.abspath(DOWNLOAD_DIR),
+                "download.default_directory": os.path.abspath(self.download_dir),
                 "download.prompt_for_download": False,
                 "download.directory_upgrade": True,
                 "plugins.always_open_pdf_externally": True,
@@ -113,18 +105,16 @@ class DomsDatabasenScraper:
         )
         return driver
 
-    @staticmethod
-    def intialize_downloader_folder():
+    def intialize_downloader_folder(self):
         """Initializes the download folder.
 
         Deletes the download folder if it exists and creates a new one.
         """
-        if DOWNLOAD_DIR.exists():
-            shutil.rmtree(DOWNLOAD_DIR)
-        DOWNLOAD_DIR.mkdir()
+        if self.download_dir.exists():
+            shutil.rmtree(self.download_dir)
+        self.download_dir.mkdir()
 
-    @staticmethod
-    def _wait_download(files_before: set, timeout: int = 10) -> str:
+    def _wait_download(self, files_before: set, timeout: int = 10) -> str:
         """Waits for a file to be downloaded to the download directory.
 
         Args:
@@ -140,7 +130,7 @@ class DomsDatabasenScraper:
         time.sleep(1)
         endtime = time.time() + timeout
         while True:
-            files_now = set(os.listdir(DOWNLOAD_DIR))
+            files_now = set(os.listdir(self.download_dir))
             new_files = files_now - files_before
             if len(new_files) == 1:
                 file_name = new_files.pop()
@@ -156,16 +146,19 @@ class DomsDatabasenScraper:
             case_dir (Path):
                 Path to case directory
         """
-        files_before_download = set(os.listdir(DOWNLOAD_DIR))
+        files_before_download = set(os.listdir(self.download_dir))
 
-        download_element = WebDriverWait(self.driver, WAIT_TIME).until(
+        download_element = WebDriverWait(self.driver, self.cfg.sleep).until(
             EC.presence_of_element_located((By.XPATH, XPATHS["download_pdf"]))
         )
 
         download_element.click()
         file_name = self._wait_download(files_before_download)
         if file_name:
-            shutil.move(DOWNLOAD_DIR / file_name, case_dir / PDF_DOCUMENT_FILE_NAME)
+            shutil.move(
+                self.download_dir / file_name,
+                case_dir / self.cfg.file_names.pdf_document,
+            )
 
     def _get_tabular_data(self) -> dict:
         """Gets the tabular data from the case.
@@ -207,7 +200,7 @@ class DomsDatabasenScraper:
 
     def _accept_cookies(self) -> None:
         """Accepts cookies on the page."""
-        element = WebDriverWait(self.driver, WAIT_TIME).until(
+        element = WebDriverWait(self.driver, self.cfg.sleep).until(
             EC.presence_of_element_located((By.XPATH, XPATHS["Accept cookies"]))
         )
         element.click()

@@ -1,8 +1,3 @@
-from pathlib import Path
-
-# Website URL
-URL_MAIN = "https://domsdatabasen.dk/#sag"
-
 # Xpaths
 XPATHS = {
     "download_pdf": "//*[local-name() = 'svg'][@data-icon = 'download']/*[local-name() = 'path']",
@@ -29,22 +24,3 @@ XPATHS_TABULAR_DATA = {
     "Påstandsbeløb": "//h4[contains(text(), 'Påstandsbeløb')]/following-sibling::p[1]",
     "Sagskomplekser": "//h4[contains(text(), 'Sagskomplekser')]/following-sibling::p[1]/span[1]",
 }
-
-# Paths
-DOWNLOAD_DIR = Path("data/downloads")
-DATA_RAW_DIR = Path("data/raw")
-
-# Other constants
-WAIT_TIME = 5
-TABULAR_DATA_FILE_NAME = "tabular_data.json"
-PDF_DOCUMENT_FILE_NAME = "document.pdf"
-
-# Messages
-"""
-Please specify either a case ID using the case_id 
-argument or use --scrape_all to scrape all cases
-"""
-GIVE_CORRECT_INPUTS = """
-Please specify either a case ID using the case_id 
-argument or use --scrape_all to scrape all cases
-"""
