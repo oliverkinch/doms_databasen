@@ -1,10 +1,10 @@
-<a href="https://github.com/alexandrainst/doms_databasen"><img src="https://github.com/alexandrainst/doms_databasen/raw/main/gfx/alexandra_logo.png" width="239" height="175" align="right" /></a>
+<a href="https://github.com/alexandrainst/doms_databasen"><img src="gfx/alexandra_logo.png" width="239" height="175" align="right" /></a>
 # doms_databasen
 
 En scrapet udgave af [domsdatabasen](https://domsdatabasen.dk/#), der for nyligt er udgivet som åben data.
 
 
-Hver enkelt dom kan tilgås via https://domsdatabasen.dk/#sag/\<nummer\>, hvor \<nummer\> er mellem 1 og 3821 (pr. 11-09-2023).
+Hver enkelt dom kan tilgås via https://domsdatabasen.dk/#sag/\<nummer\>, hvor \<nummer\> er mellem 1 og 3821 (pr. 11-10-2023).
 
 
 ______________________________________________________________________
