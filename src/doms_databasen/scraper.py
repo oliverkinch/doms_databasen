@@ -14,6 +14,7 @@ from selenium.webdriver.support.wait import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 
 from .constants import XPATHS, XPATHS_TABULAR_DATA
+from .exceptions import PDFDownloadException
 from .utils import save_dict_to_json
 
 logger = logging.getLogger(__name__)
@@ -22,8 +23,12 @@ logger = logging.getLogger(__name__)
 class DomsDatabasenScraper:
     def __init__(self, cfg):
         self.cfg = cfg
-        self.download_dir = Path(self.cfg.paths.download_dir)
+        self.test_dir = Path(self.cfg.paths.test_dir)
+        self.download_dir = (
+            Path(self.cfg.paths.download_dir) if not self.cfg.testing else self.test_dir
+        )
         self.data_raw_dir = Path(self.cfg.paths.data_raw_dir)
+
         self.intialize_downloader_folder()
         self.driver = self.start_driver()
 
@@ -51,7 +56,11 @@ class DomsDatabasenScraper:
             logger.info(f"Case {case_id} does not exist")
             return False
 
-        case_dir = self.data_raw_dir / case_id
+        case_dir = (
+            self.data_raw_dir / case_id
+            if not self.cfg.testing
+            else self.test_dir / self.cfg.test_case_name
+        )
         if case_dir.exists():
             if force:
                 shutil.rmtree(case_dir)
@@ -59,7 +68,7 @@ class DomsDatabasenScraper:
                 logger.info(f"Case {case_id} already scraped. Use --force to overwrite")
                 return True
 
-        case_dir.mkdir()
+        case_dir.mkdir(parents=True)
 
         self._download_pdf(case_dir)
         tabular_data = self._get_tabular_data()
@@ -155,10 +164,15 @@ class DomsDatabasenScraper:
         download_element.click()
         file_name = self._wait_download(files_before_download)
         if file_name:
-            shutil.move(
-                self.download_dir / file_name,
-                case_dir / self.cfg.file_names.pdf_document,
+            from_ = (
+                self.download_dir / file_name
+                if not self.cfg.testing
+                else self.test_dir / file_name
             )
+            to_ = case_dir / self.cfg.file_names.pdf_document
+            shutil.move(from_, to_)
+        else:
+            raise PDFDownloadException()
 
     def _get_tabular_data(self) -> dict:
         """Gets the tabular data from the case.
@@ -172,8 +186,6 @@ class DomsDatabasenScraper:
         time.sleep(1)
         tabular_data = {}
         for key, xpath in XPATHS_TABULAR_DATA.items():
-            if "Dørlukning" in key:
-                print("aloha")
             element = self.driver.find_element(By.XPATH, xpath)
             tabular_data[key] = element.text.strip()
 
