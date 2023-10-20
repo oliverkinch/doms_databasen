@@ -18,32 +18,14 @@ ______________________________________________________________________
 Developers:
 
 - Oliver Kinch (oliver.kinch@alexandra.dk)
+- Dan Saattrup Nielsen (dan.nielsen@alexandra.dk)
 
 
 ## Setup
 
 ### Installation
 
-1. Run `make install`, which installs Poetry (if it isn't already installed), sets up a virtual environment and all Python dependencies therein.
-2. Run `source .venv/bin/activate` to activate the virtual environment.
-
-### Adding and Removing Packages
-
-To install new PyPI packages, run:
-
-```
-poetry add <package-name>
-```
-
-To remove them again, run:
-```
-poetry remove <package-name>
-```
-
-To show all installed packages, run:
-```
-poetry show
-```
+1. Run `pip install -r requirements.txt` to install the required packages.
 
 
 ## A Word on Modules and Scripts
@@ -82,17 +64,6 @@ file is also a Python script, rather than a module.
 
 
 ## Features
-
-### Docker Setup
-
-A Dockerfile is included in the new repositories, which by default runs
-`src/scripts/your_script.py`. You can build the Docker image and run the Docker
-container by running `make docker`.
-
-### Automatic Documentation
-
-Run `make docs` to create the documentation in the `docs` folder, which is based on
-your docstrings in your code. You can view this by running `make view-docs`.
 
 ### Automatic Test Coverage Calculation
 
