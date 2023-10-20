@@ -4,7 +4,7 @@ Examples usages:
     Scrape single case:
     >>> python src/scripts/scrape.py --case_id=123
 
-    Overwrite existing single case:
+    Scrape single case and overwrite existing data:
     >>> python src/scripts/scrape.py --case_id=123 --force
 
     Scrape all cases:
