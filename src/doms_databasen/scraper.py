@@ -110,7 +110,7 @@ class DomsDatabasenScraper:
             case_id += 1
 
     def start_driver(self) -> webdriver.Chrome:
-        """Starts a Chrome webdriver with
+        """Starts a Chrome webdriver.
 
         Returns:
             webdriver.Chrome:
