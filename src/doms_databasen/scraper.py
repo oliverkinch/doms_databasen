@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class DomsDatabasenScraper:
     """Scraper for domsdatabasen.dk"""
-    def __init__(self, cfg):
+    def __init__(self, cfg) -> None:
         """Initializes the scraper.
 
         Args:
@@ -136,7 +136,7 @@ class DomsDatabasenScraper:
         )
         return driver
 
-    def intialize_downloader_folder(self):
+    def intialize_downloader_folder(self) -> None:
         """Initializes the download folder.
 
         Deletes the download folder if it exists and creates a new one.
@@ -170,7 +170,7 @@ class DomsDatabasenScraper:
                 file_name = ""
                 return file_name
 
-    def _download_pdf(self, case_dir: Path):
+    def _download_pdf(self, case_dir: Path) -> None:
         """Downloads the PDF document of the case.
 
         Args:
