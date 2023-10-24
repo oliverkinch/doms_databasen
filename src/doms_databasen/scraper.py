@@ -21,7 +21,26 @@ logger = logging.getLogger(__name__)
 
 
 class DomsDatabasenScraper:
+    """Scraper for domsdatabasen.dk"""
     def __init__(self, cfg):
+        """Initializes the scraper.
+
+        Args:
+            cfg (DictConfig):
+                Config file
+        
+        Attributes:
+            cfg (DictConfig):
+                Config file
+            test_dir (Path):
+                Path to test directory
+            download_dir (Path):
+                Path to download directory
+            data_raw_dir (Path):
+                Path to raw data directory
+            driver (webdriver.Chrome):
+                Chrome webdriver
+        """
         self.cfg = cfg
         self.test_dir = Path(self.cfg.paths.test_dir)
         self.download_dir = (
