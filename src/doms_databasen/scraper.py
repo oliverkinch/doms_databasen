@@ -22,13 +22,14 @@ logger = logging.getLogger(__name__)
 
 class DomsDatabasenScraper:
     """Scraper for domsdatabasen.dk"""
+
     def __init__(self, cfg) -> None:
         """Initializes the scraper.
 
         Args:
             cfg (DictConfig):
                 Config file
-        
+
         Attributes:
             cfg (DictConfig):
                 Config file

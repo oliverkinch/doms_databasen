@@ -17,24 +17,11 @@ Examples usages:
 import logging
 
 import click
-from hydra import compose, initialize
-from omegaconf import DictConfig
 
+from src.doms_databasen.utils import read_config
 from src.doms_databasen.scraper import DomsDatabasenScraper
 
 logger = logging.getLogger(__name__)
-
-
-def read_config() -> DictConfig:
-    """Reads the config file.
-
-    Returns:
-        DictConfig:
-            Config file
-    """
-    initialize(config_path="../../config")
-    cfg = compose(config_name="config")
-    return cfg
 
 
 @click.command()
@@ -42,7 +29,7 @@ def read_config() -> DictConfig:
 @click.option("--case_id", type=str, default="", help="Specify a case ID to scrape")
 @click.option("--scrape_all", is_flag=True, default=False, help="Scrape all cases")
 def main(force: bool, case_id: str, scrape_all: bool):
-    cfg = read_config()
+    cfg = read_config(config_path="../../config", config_name="config")
     if (not case_id and not scrape_all) or (case_id and scrape_all):
         logger.info(cfg.messages.give_correct_inputs)
         exit()
