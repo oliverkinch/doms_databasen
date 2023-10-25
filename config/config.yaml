@@ -11,27 +11,43 @@ domsdatabasen:
 paths:
   download_dir: download_tmp/
   data_raw_dir: data/raw/
+  data_processed_dir: data/processed/
   test_dir: tmp/
   test_case_dir: test_case/
 
 file_names:
   tabular_data: tabular_data.json
   pdf_document: document.pdf
-
-messages:
-  give_correct_inputs: >
-    Please specify either a case ID using the case_id 
-    argument or use --scrape_all to scrape all cases
+  processed_data: processed_data.json
 
 # Constants
 sleep: 5
+n_files_raw_case_dir: 2
+n_files_processed_case_dir: 1
 
 # Testing
 testing: False
 test_case_name: test_case
 test_case_id: "1"
 
-# Arguments
-force: False
-case_id: "1"
-scrape_all: False
+# Scrape arguments
+scrape:
+  force: False
+  case_id: "1"
+  all: False
+  messages:
+    give_correct_input: >
+      Please specify either a 'case_id'
+      or use 'all' to scrape all cases.
+
+# Process arguments
+process:
+  force: False
+  case_id: "1"
+  all: False
+  messages:
+    give_correct_input: >
+      Please specify either a 'case_id'
+      or use 'all' to process all cases.
+
+

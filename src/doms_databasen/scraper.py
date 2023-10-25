@@ -13,7 +13,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 
-from .constants import XPATHS, XPATHS_TABULAR_DATA
+from .xpaths import XPATHS, XPATHS_TABULAR_DATA
 from .exceptions import PDFDownloadException
 from .utils import save_dict_to_json
 
@@ -21,27 +21,30 @@ logger = logging.getLogger(__name__)
 
 
 class DomsDatabasenScraper:
-    """Scraper for domsdatabasen.dk"""
+    """Scraper for domsdatabasen.dk
+
+    Args:
+        cfg (DictConfig):
+            Config file
+
+    Attributes:
+        cfg (DictConfig):
+            Config file
+        test_dir (Path):
+            Path to test directory
+        download_dir (Path):
+            Path to download directory
+        data_raw_dir (Path):
+            Path to raw data directory
+        force (bool):
+            If True, existing data will be overwritten.
+        cookies_clicked (bool):
+            True if cookies have been clicked. False otherwise.
+        driver (webdriver.Chrome):
+            Chrome webdriver
+    """
 
     def __init__(self, cfg) -> None:
-        """Initializes the scraper.
-
-        Args:
-            cfg (DictConfig):
-                Config file
-
-        Attributes:
-            cfg (DictConfig):
-                Config file
-            test_dir (Path):
-                Path to test directory
-            download_dir (Path):
-                Path to download directory
-            data_raw_dir (Path):
-                Path to raw data directory
-            driver (webdriver.Chrome):
-                Chrome webdriver
-        """
         self.cfg = cfg
         self.test_dir = Path(self.cfg.paths.test_dir)
         self.download_dir = (
@@ -49,47 +52,64 @@ class DomsDatabasenScraper:
         )
         self.data_raw_dir = Path(self.cfg.paths.data_raw_dir)
 
+        self.force = self.cfg.scrape.force
+        self.cookies_clicked = False
+
         self.intialize_downloader_folder()
         self.driver = self.start_driver()
 
-    def scrape_case(self, case_id: str, force=False) -> bool:
+    def scrape(self, case_id: str) -> bool:
         """Scrapes a single case from domsdatabasen.dk
 
         Args:
             case_id (str):
                 Case ID
-            force (bool, optional):
-                If True, overwrites existing data. Defaults to False.
 
         Returns:
             bool:
-                True if case has successfully been scraped or already
-                has been scraped. False if case does not exist.
+                The return value is used in `self.scrape_all`, to determine
+                if the scraping should continue to the next case or stop.
         """
         case_id = str(case_id)
-        case_url = f"{self.cfg.domsdatabasen.url}/{case_id}"
-        self.driver.get(case_url)
-        # Wait for page to load
-        time.sleep(1)
-        self._accept_cookies()
-        time.sleep(1)
-        if not self._case_id_exists():
-            logger.info(f"Case {case_id} does not exist")
-            return False
-
         case_dir = (
             self.data_raw_dir / case_id
             if not self.cfg.testing
             else self.test_dir / self.cfg.test_case_name
         )
-        if case_dir.exists():
-            if force:
-                shutil.rmtree(case_dir)
-            else:
-                logger.info(f"Case {case_id} already scraped. Use --force to overwrite")
-                return True
 
-        case_dir.mkdir(parents=True)
+        if self._already_scraped(case_dir) and not self.force:
+            logger.info(
+                f"Case {case_id} is already scraped. Use 'scrape.force' to overwrite"
+            )
+            return True
+
+        logger.info(f"Scraping case {case_id}")
+
+        case_url = f"{self.cfg.domsdatabasen.url}/{case_id}"
+        self.driver.get(case_url)
+        # Wait for page to load
+        time.sleep(1)
+        if not self.cookies_clicked:
+            self._accept_cookies()
+            self.cookies_clicked = True
+            time.sleep(1)
+
+        if not self._case_id_exists():
+            # This will be triggered if no case has the given ID.
+            # As cases are listed in ascending order starting from 1,
+            # this means that no more cases exist.
+            logger.info(f"Case {case_id} does not exist")
+            return False
+
+        elif not self._case_is_accessible():
+            # Some cases might be unavailable for some reason.
+            # A description is usually given on the page for case.
+            # Thus if this is the case, just go to the next case.
+            logger.info(f"Case {case_id} is not accessible")
+            return True
+
+        # Scrape data for the case.
+        case_dir.mkdir(parents=True, exist_ok=True)
 
         self._download_pdf(case_dir)
         tabular_data = self._get_tabular_data()
@@ -97,17 +117,18 @@ class DomsDatabasenScraper:
 
         return True
 
-    def scrape_all(self, force=False) -> None:
+    def scrape_all(self) -> None:
         """Scrapes all cases from domsdatabasen.dk
 
         Args:
             force (bool, optional):
                 If True, overwrites existing data. Defaults to False.
         """
+        logger.info("Scraping all cases")
         case_id = 1
         while True:
-            success = self.scrape_case(str(case_id), force=force)
-            if not success:
+            continue_ = self.scrape(str(case_id))
+            if not continue_:
                 break
             case_id += 1
 
@@ -146,6 +167,25 @@ class DomsDatabasenScraper:
         if self.download_dir.exists():
             shutil.rmtree(self.download_dir)
         self.download_dir.mkdir()
+
+    def _already_scraped(self, case_dir) -> bool:
+        """Checks if a case has already been scraped.
+
+        If a case has already been scraped, the case directory will contain
+        two files: the PDF document and the tabular data.
+
+        Args:
+            case_dir (Path):
+                Path to case directory
+
+        Returns:
+            bool:
+                True if case has already been scraped. False otherwise.
+        """
+        return (
+            case_dir.exists()
+            and len(os.listdir(case_dir)) == self.cfg.n_files_raw_case_dir
+        )
 
     def _wait_download(self, files_before: set, timeout: int = 10) -> str:
         """Waits for a file to be downloaded to the download directory.
@@ -215,6 +255,13 @@ class DomsDatabasenScraper:
 
         return tabular_data
 
+    def _accept_cookies(self) -> None:
+        """Accepts cookies on the page."""
+        element = WebDriverWait(self.driver, self.cfg.sleep).until(
+            EC.presence_of_element_located((By.XPATH, XPATHS["Accept cookies"]))
+        )
+        element.click()
+
     def _case_id_exists(self) -> bool:
         """Checks if the case exists.
 
@@ -225,18 +272,36 @@ class DomsDatabasenScraper:
             bool:
                 True if case exists. False otherwise.
         """
+        return not self.element_exists(XPATHS["Fejlkode 404"])
+
+    def _case_is_accessible(self) -> bool:
+        """Checks if the case is accessible.
+
+        Some cases are not accessible for some reason. If this is the
+        case, the page will contain the text "Sagen er ikke tilgængelig".
+
+        Returns:
+            bool:
+                True if case is accessible. False otherwise.
+        """
+        return not self.element_exists(XPATHS["Sagen er ikke tilgængelig"])
+
+    def element_exists(self, xpath) -> bool:
+        """Checks if an element exists on the page.
+
+        Args:
+            xpath (str):
+                Xpath to element
+
+        Returns:
+            bool:
+                True if element exists. False otherwise.
+        """
         try:
-            _ = self.driver.find_element(By.XPATH, XPATHS["Fejlkode 404"])
-            return False
-        except NoSuchElementException:
+            _ = self.driver.find_element(By.XPATH, xpath)
             return True
+        except NoSuchElementException:
+            return False
         except Exception as e:
             logger.error(e)
             raise e
-
-    def _accept_cookies(self) -> None:
-        """Accepts cookies on the page."""
-        element = WebDriverWait(self.driver, self.cfg.sleep).until(
-            EC.presence_of_element_located((By.XPATH, XPATHS["Accept cookies"]))
-        )
-        element.click()
