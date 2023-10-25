@@ -23,7 +23,10 @@ messages:
     Please specify either a case ID using the case_id 
     argument or use --scrape_all to scrape all cases
 
+# Constants
 sleep: 5
+
+# Testing
 testing: False
 test_case_name: test_case
 test_case_id: "1"
