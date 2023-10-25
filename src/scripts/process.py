@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 @hydra.main(config_path="../../config", config_name="config")
-def main(cfg: DictConfig):
+def main(cfg: DictConfig) -> None:
     processor = Processor(cfg=cfg)
     if cfg.process.all:
         processor.process_all()

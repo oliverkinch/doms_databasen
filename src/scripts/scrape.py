@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 @hydra.main(config_path="../../config", config_name="config")
-def main(cfg: DictConfig):
+def main(cfg: DictConfig) -> None:
     scraper = DomsDatabasenScraper(cfg=cfg)
     if cfg.scrape.all:
         scraper.scrape_all()

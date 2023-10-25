@@ -43,7 +43,7 @@ class Processor:
                 Case ID
         """
         case_id = str(case_id)
-        
+
         case_dir_raw = self.data_raw_dir / case_id
         case_dir_processed = self.data_processed_dir / case_id
 
@@ -61,16 +61,16 @@ class Processor:
 
         # Process data for the case.
         logger.info(f"Processing case {case_id}")
-        
+
         case_dir_processed.mkdir(parents=True, exist_ok=True)
 
         tabular_data = read_json(case_dir_raw / self.cfg.file_names.tabular_data)
 
         processed_data = tabular_data.copy()
+        processed_data["case_id"] = case_id
         processed_data["text"] = extract_text_from_pdf(
             str(case_dir_raw / self.cfg.file_names.pdf_document)
         )
-        processed_data["case_id"] = case_id
 
         save_dict_to_json(
             processed_data, case_dir_processed / self.cfg.file_names.processed_data
@@ -90,7 +90,7 @@ class Processor:
     def _already_processed(self, case_dir) -> bool:
         """Checks if a case has already been processed.
 
-        If a case has already been processed, the case directory will 
+        If a case has already been processed, the case directory will
         exist and will contain one file with the tabular data.
 
         Args:
@@ -105,6 +105,7 @@ class Processor:
             case_dir.exists()
             and len(os.listdir(case_dir)) == self.cfg.n_files_processed_case_dir
         )
+
     def _raw_data_exists(self, case_dir) -> bool:
         """Checks if raw data for a case exists.
 
