@@ -32,7 +32,7 @@ def pytest_sessionstart(session):
         overrides=["testing=True"],
     )
     scraper = DomsDatabasenScraper(cfg=cfg)
-    case_id = str(random.randint(1, 100))
+    case_id = str(1)
     scraper.scrape_case(case_id)
 
     session.__CACHE = scraper.test_dir
