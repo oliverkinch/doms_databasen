@@ -20,7 +20,6 @@ from omegaconf import DictConfig
 
 from src.doms_databasen.scraper import DomsDatabasenScraper
 # Importing as a module, doesn't work when running as a script?
-# from doms_databasen.utils import read_config
 # from doms_databasen.scraper import DomsDatabasenScraper
 
 logger = logging.getLogger(__name__)
