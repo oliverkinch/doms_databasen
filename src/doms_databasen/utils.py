@@ -1,4 +1,5 @@
 import json
+import jsonlines
 from tika import parser
 
 
@@ -24,6 +25,36 @@ def read_json(file_path) -> None:
     """
     with open(file_path, "r") as f:
         return json.load(f)
+
+
+def init_jsonl(file_name: str) -> None:
+    """Initializes jsonl file.
+
+    The function is used in the DataSetBuilder class to initialize
+    the dataset file, if it does not already exist.
+
+    Args:
+        file_name (str):
+            File name to initialize.
+    """
+    with open(file_name, "w") as _:
+        pass
+
+
+def append_jsonl(data: dict, file_name: str) -> None:
+    """Appends data to jsonl file.
+
+    Args:
+        data (dict):
+            Data to append.
+        file_name (str):
+            The name of the JSONL file where the data should be appended.
+        keys_to_str (list):
+            List of keys to convert to string (for example PosixPath objects)
+    """
+
+    with jsonlines.open(file_name, mode="a") as writer:
+        writer.write(data)
 
 
 def extract_text_from_pdf(pdf_path: str) -> str:

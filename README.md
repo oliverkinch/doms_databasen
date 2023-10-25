@@ -11,6 +11,9 @@ Se `src/scripts/scrape.py`.
 ## Processing af scraped data
 Se `src/scripts/process.py`.
 
+## Finalize data
+Se `src/scripts/finalize.py`.
+
 ______________________________________________________________________
 [![Documentation](https://img.shields.io/badge/docs-passing-green)](https://alexandrainst.github.io/doms_databasen/doms_databasen.html)
 [![License](https://img.shields.io/github/license/alexandrainst/doms_databasen)](https://github.com/alexandrainst/doms_databasen/blob/main/LICENSE)

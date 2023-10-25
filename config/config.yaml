@@ -12,6 +12,7 @@ paths:
   download_dir: download_tmp/
   data_raw_dir: data/raw/
   data_processed_dir: data/processed/
+  data_final_dir: data/final/
   test_dir: tmp/
   test_case_dir: test_case/
 
@@ -19,6 +20,7 @@ file_names:
   tabular_data: tabular_data.json
   pdf_document: document.pdf
   processed_data: processed_data.json
+  dataset: dataset.jsonl
 
 # Constants
 sleep: 5
@@ -50,4 +52,6 @@ process:
       Please specify either a 'case_id'
       or use 'all' to process all cases.
 
-
+# Finalize arguments
+finalize:
+  force: False
