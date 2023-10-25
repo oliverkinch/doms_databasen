@@ -66,6 +66,7 @@ class DomsDatabasenScraper:
                 True if case has successfully been scraped or already
                 has been scraped. False if case does not exist.
         """
+        case_id = str(case_id)
         case_url = f"{self.cfg.domsdatabasen.url}/{case_id}"
         self.driver.get(case_url)
         # Wait for page to load
