@@ -44,6 +44,8 @@ scrape:
     give_correct_input: >
       Please specify either a 'case_id'
       or use 'all' to scrape all cases.
+    done: >
+      Scraping done!
 
 # Process arguments
 process:
@@ -54,6 +56,8 @@ process:
     give_correct_input: >
       Please specify either a 'case_id'
       or use 'all' to process all cases.
+    done: >
+      Processing done!
 
 # Finalize arguments
 finalize:

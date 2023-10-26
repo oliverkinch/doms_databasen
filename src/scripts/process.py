@@ -37,7 +37,7 @@ def main(cfg: DictConfig) -> None:
     else:
         logger.info(cfg.process.messages.give_correct_inputs)
 
-    logger.info("Done!")
+    logger.info(cfg.process.messages.done)
 
 
 if __name__ == "__main__":
