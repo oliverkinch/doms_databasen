@@ -70,7 +70,9 @@ class Processor:
         processed_data["case_id"] = case_id
         pdf_path = case_dir_raw / self.cfg.file_names.pdf_document
         processed_data["text"] = extract_text_from_pdf(
-            pdf_path=pdf_path, max_y_difference=self.cfg.max_y_difference, gpu=self.cfg.gpu 
+            pdf_path=pdf_path,
+            max_y_difference=self.cfg.max_y_difference,
+            gpu=self.cfg.gpu,
         )
 
         save_dict_to_json(
@@ -80,11 +82,14 @@ class Processor:
     def process_all(self) -> None:
         """Processes all cases in data/raw"""
         logger.info("Processing all cases")
-        case_ids = sorted([
-            case_path.name
-            for case_path in self.data_raw_dir.iterdir()
-            if case_path.is_dir()  # Exclude .gitkeep
-        ], key=lambda case_id: int(case_id))
+        case_ids = sorted(
+            [
+                case_path.name
+                for case_path in self.data_raw_dir.iterdir()
+                if case_path.is_dir()  # Exclude .gitkeep
+            ],
+            key=lambda case_id: int(case_id),
+        )
         for case_id in case_ids:
             self.process(case_id)
 

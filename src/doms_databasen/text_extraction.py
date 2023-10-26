@@ -37,7 +37,9 @@ def extract_text_from_pdf(pdf_path: str, max_y_difference: int, gpu: bool) -> st
         text = ""
         for image in images:
             # Extract bounding boxes
-            result = reader.readtext(np.array(image)) # I have tried more arguments, but it doesn't seem to help.
+            result = reader.readtext(
+                np.array(image)
+            )  # I have tried more arguments, but it doesn't seem to help.
             # result = reader.readtext(np.array(image), min_size=1, decoder="beamer", beamWidth=10, mag_ratio=5)
 
             # Sort w.r.t y coordinate.
@@ -106,7 +108,7 @@ def extract_text_from_pdf(pdf_path: str, max_y_difference: int, gpu: bool) -> st
 
 def _on_same_line(y: int, y_prev: int, max_y_difference: int) -> bool:
     """Helper function to determine if two bounding boxes are on the same line.
-    
+
     Used in `extract_text_from_pdf()` in the OCR part.
 
     Args:
@@ -116,7 +118,7 @@ def _on_same_line(y: int, y_prev: int, max_y_difference: int) -> bool:
             y coordinate of top left corner of previous bounding box.
         max_y_difference (int):
             Maximum difference between y coordinates of two bounding boxes on the same line.
-    
+
     Returns:
         bool:
             True if the two bounding boxes are on the same line. False otherwise.
