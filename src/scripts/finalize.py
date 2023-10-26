@@ -8,13 +8,13 @@ Usage:
 """
 
 
-import hydra
-from pathlib import Path
-from omegaconf import DictConfig
 from logging import getLogger
+from pathlib import Path
 
-from src.doms_databasen.utils import read_json, init_jsonl, append_jsonl
+import hydra
+from omegaconf import DictConfig
 
+from src.doms_databasen.utils import append_jsonl, init_jsonl, read_json
 
 logger = getLogger(__name__)
 

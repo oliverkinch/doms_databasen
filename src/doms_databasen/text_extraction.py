@@ -1,9 +1,9 @@
-from tika import parser
-from pdf2image import convert_from_path
-import numpy as np
-import easyocr
 from logging import getLogger
 
+import easyocr
+import numpy as np
+from pdf2image import convert_from_path
+from tika import parser
 
 logger = getLogger(__name__)
 

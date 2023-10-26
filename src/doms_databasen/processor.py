@@ -1,10 +1,9 @@
 import os
-from pathlib import Path
 from logging import getLogger
+from pathlib import Path
 
-from .utils import read_json, save_dict_to_json
 from .text_extraction import extract_text_from_pdf
-
+from .utils import read_json, save_dict_to_json
 
 logger = getLogger(__name__)
 
