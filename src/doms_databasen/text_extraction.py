@@ -104,7 +104,7 @@ def extract_text_from_pdf(pdf_path: str, max_y_difference: int, gpu: bool) -> st
         return text.strip()
 
 
-def _on_same_line(y, y_prev, max_y_difference) -> bool:
+def _on_same_line(y: int, y_prev: int, max_y_difference: int) -> bool:
     """Helper function to determine if two bounding boxes are on the same line.
     
     Used in `extract_text_from_pdf()` in the OCR part.
