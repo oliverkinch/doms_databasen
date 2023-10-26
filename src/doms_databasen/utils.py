@@ -1,6 +1,5 @@
 import json
 import jsonlines
-from tika import parser
 
 
 def save_dict_to_json(dict_, file_path) -> None:
@@ -55,18 +54,3 @@ def append_jsonl(data: dict, file_name: str) -> None:
 
     with jsonlines.open(file_name, mode="a") as writer:
         writer.write(data)
-
-
-def extract_text_from_pdf(pdf_path: str) -> str:
-    """Extract text from pdf using the tika module.
-
-    Args:
-        pdf_path (Path):
-            Path to pdf
-
-    Returns:
-        str:
-            Text from pdf
-    """
-    text = parser.from_file(str(pdf_path))["content"]
-    return text.strip()

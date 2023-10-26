@@ -26,6 +26,9 @@ file_names:
 sleep: 5
 n_files_raw_case_dir: 2
 n_files_processed_case_dir: 1
+max_consecutive_nonexistent_page_count: 100
+max_y_difference: 10
+gpu: False
 
 # Testing
 testing: False

@@ -26,7 +26,9 @@ def main(cfg: DictConfig) -> None:
     dataset_path = data_final_dir / cfg.file_names.dataset
 
     if dataset_path.exists() and not cfg.finalize.force:
-        logger.info(f"Dataset already exists at {dataset_path}. Use 'finalize.force=True' to overwrite.")
+        logger.info(
+            f"Dataset already exists at {dataset_path}. Use 'finalize.force=True' to overwrite."
+        )
         return
 
     logger.info("Initializing dataset with path: {dataset_path}")
@@ -42,6 +44,7 @@ def main(cfg: DictConfig) -> None:
         append_jsonl(json_data, dataset_path)
 
     logger.info(f"Dataset saved at {dataset_path}")
+
 
 if __name__ == "__main__":
     main()

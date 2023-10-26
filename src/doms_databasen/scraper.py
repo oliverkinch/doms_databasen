@@ -54,6 +54,9 @@ class DomsDatabasenScraper:
 
         self.force = self.cfg.scrape.force
         self.cookies_clicked = False
+        self.consecutive_nonexistent_page_count = (
+            0  # Only relevant when scraping all cases.
+        )
 
         self.intialize_downloader_folder()
         self.driver = self.start_driver()
@@ -81,7 +84,7 @@ class DomsDatabasenScraper:
             logger.info(
                 f"Case {case_id} is already scraped. Use 'scrape.force' to overwrite"
             )
-            return True
+            return
 
         logger.info(f"Scraping case {case_id}")
 
@@ -96,17 +99,18 @@ class DomsDatabasenScraper:
 
         if not self._case_id_exists():
             # This will be triggered if no case has the given ID.
-            # As cases are listed in ascending order starting from 1,
-            # this means that no more cases exist.
             logger.info(f"Case {case_id} does not exist")
-            return False
+            self.consecutive_nonexistent_page_count += 1
+            return
 
-        elif not self._case_is_accessible():
+        self.consecutive_nonexistent_page_count = 0
+
+        if not self._case_is_accessible():
             # Some cases might be unavailable for some reason.
             # A description is usually given on the page for case.
             # Thus if this is the case, just go to the next case.
             logger.info(f"Case {case_id} is not accessible")
-            return True
+            return
 
         # Scrape data for the case.
         case_dir.mkdir(parents=True, exist_ok=True)
@@ -115,21 +119,21 @@ class DomsDatabasenScraper:
         tabular_data = self._get_tabular_data()
         save_dict_to_json(tabular_data, case_dir / self.cfg.file_names.tabular_data)
 
-        return True
-
     def scrape_all(self) -> None:
         """Scrapes all cases from domsdatabasen.dk
 
-        Args:
-            force (bool, optional):
-                If True, overwrites existing data. Defaults to False.
+        The highest case ID is unknown, and there are IDs between 1 and
+        the highest case ID that do not exist. Thus, the scraper starts
+        at case ID 1, and scraping will stop when a number of consecutive
+        non-existent pages have been encountered.
         """
         logger.info("Scraping all cases")
         case_id = 1
-        while True:
-            continue_ = self.scrape(str(case_id))
-            if not continue_:
-                break
+        while (
+            self.consecutive_nonexistent_page_count
+            < self.cfg.max_consecutive_nonexistent_page_count
+        ):
+            self.scrape(str(case_id))
             case_id += 1
 
     def start_driver(self) -> webdriver.Chrome:
