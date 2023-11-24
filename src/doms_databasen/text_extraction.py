@@ -672,8 +672,9 @@ def get_text_from_anonymized_box(
         anonymized_boxes_ = [anonymized_box]
 
     texts = []
+    # anonymized_boxes_ are sorted left to right
     for anonymized_box_ in anonymized_boxes_:
-        tl, tr, br, bl = anonymized_box_["coordinates"]
+        tl, tr, _, bl = anonymized_box_["coordinates"]
 
         row_min = tl[1]
         row_max = bl[1]
@@ -932,21 +933,21 @@ def find_anonymized_boxes(
 
 def _has_neighboring_white_pixels(a: np.ndarray, b: np.ndarray):
     """
-    
+
     The arrays must be of same size.
-    
+
     """
     # Check if a and b have neighboring white pixels.
     assert len(a) == len(b), "Arrays must be of same size."
     a_indices = np.where(a != 0)[0]
     b_indices = np.where(b != 0)[0]
-    distances = np.abs(a_indices - b_indices[:, None]) # Manhattan distance
+    distances = np.abs(a_indices - b_indices[:, None])  # Manhattan distance
 
     if len(distances) == 0:
         # Edge case if at least one of the arrays are all zeros.
         return False
     else:
-        # Arrays are seen as having white pixel neighbors if the Manhattan distance is 
+        # Arrays are seen as having white pixel neighbors if the Manhattan distance is
         # between two white pixels of the arrays is less than 2.
         return distances.min() < 2
 
@@ -963,7 +964,22 @@ def binarize(image, threshold):
     return binary
 
 
-def _remove_boundary_noise(binary):
+def _remove_boundary_noise(binary: np.ndarray):
+    """Removes noise on the boundary of a binary image.
+
+    All white pixels in a perfect bounding box should be a pixel of a relevant character.
+    Some images have white pixel defect at the boundary of the bounding box, and
+    this function removes those white pixels.
+
+    Args:
+        binary (np.ndarray):
+            Binary image of the current page.
+
+    Returns:
+        np.ndarray:
+            Binary image of the current page with the boundary noise removed.
+    """
+
     blobs = get_blobs(binary)
     blob = blobs[0]
 
@@ -975,10 +991,9 @@ def _remove_boundary_noise(binary):
         binary_edit[row_min:row_max, col_min:col_max] = 0
         save_cv2_image_tmp(binary_edit)
 
-        # Hvis blobs øverste eller nederste punkt ikke nærmer sig midterrækken,
-        # så er det jo nok støj og ikke bogstaver.
-        # Og den skal også rører boundary af billedet!!
-        # Make constant for blob height
+        # All letters have a height > ~ 22 pixels.
+        # A blob that touches the boundary and doesn't cross the
+        # middle row of the image is supposedly not a letter, but noise.
         if (
             height < 15
             and _touches_boundary(binary, blob)
@@ -992,6 +1007,19 @@ def _remove_boundary_noise(binary):
 
 
 def _touches_boundary(binary, blob):
+    """Check if blob touches the boundary of the image.
+
+    Args:
+        binary (np.ndarray):
+            Binary image of the current page
+            (used to get the non-zero boundaries of the image).
+        blob (skimage.measure._regionprops._RegionProperties):
+            A blob in the image.
+
+    Returns:
+        bool:
+            True if blob touches the boundary of the image. False otherwise.
+    """
     for boundary in [0, *binary.shape]:
         if boundary in blob.bbox:
             return True
@@ -1019,6 +1047,230 @@ def _unpack_coordinates(box):
     tl, tr, _, bl = box["coordinates"]
     row_min, row_max, col_min, col_max = tl[1], bl[1], tl[0], tr[0]
     return row_min, row_max, col_min, col_max
+
+
+def _refine_anonymized_box(anonymized_box, image, threshold: int = 30):
+    tl, tr, _, bl = anonymized_box["coordinates"]
+
+    row_min = tl[1]
+    row_max = bl[1]
+    col_max = tr[0]
+    col_min = tl[0]
+    box_coordinates_unpacked = [row_min, row_max, col_min, col_max]
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    save_cv2_image_tmp(gray)
+    binary = binarize(gray, threshold)
+    save_cv2_image_tmp(binary)
+
+    # Eksempel med venstre side af box
+
+    # +1 fordi at slice er exclusive og boxes coordinates er inclusive.
+    crop = gray[row_min : row_max + 1, col_min : col_max + 1]
+    save_cv2_image_tmp(crop)
+
+    # If empty/black box, text is empty.
+    if crop.sum() == 0:
+        anonymized_box["text"] = ""
+        return anonymized_box
+
+    crop_binary = binarize(crop, threshold)
+    save_cv2_image_tmp(crop_binary)
+
+    crop_binary_ = _remove_boundary_noise(crop_binary.copy())
+    save_cv2_image_tmp(crop_binary_)
+    binary[row_min : row_max + 1, col_min : col_max + 1] = crop_binary_
+    save_cv2_image_tmp(binary)
+
+    # Refine box
+    binary, box_coordinates_unpacked = _refine(
+        binary=binary, box_coordinates_unpacked=box_coordinates_unpacked
+    )
+    row_min, row_max, col_min, col_max = box_coordinates_unpacked
+    save_cv2_image_tmp(binary[row_min : row_max + 1, col_min : col_max + 1])
+
+    tl_, tr_, br_, bl_ = (
+        (col_min, row_min),
+        (col_max, row_min),
+        (col_max, row_max),
+        (col_min, row_max),
+    )
+
+    anonymized_box["coordinates"] = (tl_, tr_, br_, bl_)
+    return anonymized_box
+
+
+def _refine(binary: np.ndarray, box_coordinates_unpacked: List[int]):
+    """Refines bounding box.
+
+    Two scenarios:
+        1. The box is too big, i.e. there is too much black space around the text.
+        2. The box is too small, i.e. some letters are not fully included in the box.
+
+    Args:
+        binary (np.ndarray):
+            Binary image of the current page.
+        box_coordinates_unpacked (tuple):
+            Tuple with coordinates given by min/max row/col of box.
+
+    Returns:
+        binary (np.ndarray):
+            Binary image of the current page with changes made w.r.t the bounding box
+            (this is output could be optional, as it only used to visualize the changes made).
+        box_coordinates_unpacked (tuple):
+            Tuple with refined coordinates given by min/max row/col of box.
+    """
+
+    row_min, row_max, col_min, col_max = box_coordinates_unpacked
+    save_cv2_image_tmp(binary[row_min : row_max + 1, col_min : col_max + 1])
+
+    # Rows from top
+    row = binary[row_min, col_min : col_max + 1]
+    if not row.sum() == 0:
+        binary, box_coordinates_unpacked = _refine_(
+            top_bottom_left_right="top",
+            expanding=True,
+            binary=binary,
+            box_coordinates_unpacked=box_coordinates_unpacked,
+        )
+    else:
+        binary, box_coordinates_unpacked = _refine_(
+            top_bottom_left_right="top",
+            expanding=False,
+            binary=binary,
+            box_coordinates_unpacked=box_coordinates_unpacked,
+        )
+
+    row_min, row_max, col_min, col_max = box_coordinates_unpacked
+    save_cv2_image_tmp(binary[row_min : row_max + 1, col_min : col_max + 1])
+
+    # Rows from bottom
+    row = binary[row_max, col_min : col_max + 1]
+    if not row.sum() == 0:
+        binary, box_coordinates_unpacked = _refine_(
+            top_bottom_left_right="bottom",
+            expanding=True,
+            binary=binary,
+            box_coordinates_unpacked=box_coordinates_unpacked,
+        )
+    else:
+        binary, box_coordinates_unpacked = _refine_(
+            top_bottom_left_right="bottom",
+            expanding=False,
+            binary=binary,
+            box_coordinates_unpacked=box_coordinates_unpacked,
+        )
+
+    row_min, row_max, col_min, col_max = box_coordinates_unpacked
+    save_cv2_image_tmp(binary[row_min : row_max + 1, col_min : col_max + 1])
+
+    # Columns from left
+    col = binary[row_min : row_max + 1, col_min]
+    if not col.sum() == 0:
+        binary, box_coordinates_unpacked = _refine_(
+            top_bottom_left_right="left",
+            expanding=True,
+            binary=binary,
+            box_coordinates_unpacked=box_coordinates_unpacked,
+        )
+    else:
+        binary, box_coordinates_unpacked = _refine_(
+            top_bottom_left_right="left",
+            expanding=False,
+            binary=binary,
+            box_coordinates_unpacked=box_coordinates_unpacked,
+        )
+
+    row_min, row_max, col_min, col_max = box_coordinates_unpacked
+    save_cv2_image_tmp(binary[row_min : row_max + 1, col_min : col_max + 1])
+
+    # Columns from right
+    col = binary[row_min : row_max + 1, col_max]
+    if not col.sum() == 0:
+        binary, box_coordinates_unpacked = _refine_(
+            top_bottom_left_right="right",
+            expanding=True,
+            binary=binary,
+            box_coordinates_unpacked=box_coordinates_unpacked,
+        )
+    else:
+        binary, box_coordinates_unpacked = _refine_(
+            top_bottom_left_right="right",
+            expanding=False,
+            binary=binary,
+            box_coordinates_unpacked=box_coordinates_unpacked,
+        )
+
+    row_min, row_max, col_min, col_max = box_coordinates_unpacked
+    save_cv2_image_tmp(binary[row_min : row_max + 1, col_min : col_max + 1])
+
+    return binary, box_coordinates_unpacked
+
+
+def _refine_(
+    top_bottom_left_right: str, expanding: bool, binary, box_coordinates_unpacked
+):
+    """Refines bounding box in one direction.
+
+    Args:
+        top_bottom_left_right (str):
+            String indicating which direction to refine.
+        expanding (bool):
+            Boolean indicating if the box should be expanded or shrunk.
+        binary (np.ndarray):
+            Binary image of the current page.
+        box_coordinates_unpacked (tuple):
+            Tuple with coordinates given by min/max row/col of box.
+
+    Returns:
+        binary (np.ndarray):
+            Binary image of the current page with changes made w.r.t the bounding box
+            (this is output could be optional, as it only used to visualize the changes made).
+        box_coordinates_unpacked (tuple):
+            Tuple with refined coordinates given by min/max row/col of box.
+    """
+    if expanding:
+        row_col_next, row_col, box_coordinates_unpacked = _next_row_col(
+            top_bottom_left_right=top_bottom_left_right,
+            expanding=expanding,
+            binary=binary,
+            box_coordinates_unpacked=box_coordinates_unpacked,
+        )
+        while _not_only_white(row_col_next) and _has_neighboring_white_pixels(
+            row_col, row_col_next
+        ):
+            row_col_next, row_col, box_coordinates_unpacked = _next_row_col(
+                top_bottom_left_right=top_bottom_left_right,
+                expanding=expanding,
+                binary=binary,
+                box_coordinates_unpacked=box_coordinates_unpacked,
+            )
+        row_min, row_max, col_min, col_max = box_coordinates_unpacked
+        # Make the first row/col not accepted black.
+        if top_bottom_left_right == "top":
+            binary[row_min, :] = 0
+        elif top_bottom_left_right == "bottom":
+            binary[row_max, :] = 0
+        elif top_bottom_left_right == "left":
+            binary[:, col_min] = 0
+        elif top_bottom_left_right == "right":
+            binary[:, col_max] = 0
+
+    else:
+        row_col_next, _, box_coordinates_unpacked = _next_row_col(
+            top_bottom_left_right=top_bottom_left_right,
+            expanding=False,
+            binary=binary,
+            box_coordinates_unpacked=box_coordinates_unpacked,
+        )
+        while row_col_next.sum() == 0:
+            row_col_next, _, box_coordinates_unpacked = _next_row_col(
+                top_bottom_left_right=top_bottom_left_right,
+                expanding=False,
+                binary=binary,
+                box_coordinates_unpacked=box_coordinates_unpacked,
+            )
+    return binary, box_coordinates_unpacked
 
 
 def _next_row_col(
@@ -1052,284 +1304,9 @@ def _next_row_col(
         change = 1 if expanding else -1
         col_max += change
         row_col_next = binary[row_min : row_max + 1, col_max]
-    return row_col_next, row_col, [row_min, row_max, col_min, col_max]
 
-
-def _refine_anonymized_box(anonymized_box, image, threshold: int = 30):
-    tl, tr, _, bl = anonymized_box["coordinates"]
-    row_min = tl[1]
-    row_max = bl[1]
-    col_max = tr[0]
-    col_min = tl[0]
-    row_min_ = row_min
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    save_cv2_image_tmp(gray)
-    binary = binarize(gray, threshold)
-    save_cv2_image_tmp(binary)
-
-    # Eksempel med venstre side af box
-    # Find den søjle i midterrækken som er nærmest venstre boundary.
-
-    # +1 fordi at slice er exclusive og boxes coordinates er inclusive.
-    crop = gray[row_min : row_max + 1, col_min : col_max + 1]
-    save_cv2_image_tmp(crop)
-
-    crop_binary = binarize(crop, threshold)
-    save_cv2_image_tmp(crop_binary)
-
-    crop_binary_ = _remove_boundary_noise(crop_binary.copy())
-    save_cv2_image_tmp(crop_binary_)
-    binary[row_min : row_max + 1, col_min : col_max + 1] = crop_binary_
-    save_cv2_image_tmp(binary)
-
-    # eroded = cv2.erode(crop, np.ones((5, 1)), iterations=1)
-    # dilated = cv2.dilate(eroded, np.ones((5, 1)), iterations=1)
-    # crop = dilated
-    # save_cv2_image_tmp(crop)
-
-    # white_left = np.where(crop[mid, :] != 0)[1].min()
-    # Få all indices for denne blob med skimage flood?
-    # Fortsæt så med at tage søjler til venstre, så længe at
-    # denne nye søjle har pixels forbundet med blob.
-    # Eller så er nuværende fin nok - bare ikke sæt maks
-    # på hvor mange gange box må blive reducere, men kun
-    # på hvor mange gange den må blive udvidet.
-    # ELLER, for hvor der er x pixels i strej horizontalt
-    # som er sorte (i midterrækken), så skal alle pixels
-    # under og over disse pixels også være sorte.
-    # Eller find BLOBs
-    # Hvis højden af blob er under threshold, så fjern den.
-
-    # If empty/black box, text is empty.
-    if crop.sum() == 0:
-        anonymized_box["text"] = ""
-        return anonymized_box
-
-    def _refine(
-        top_bottom_left_right: str, expanding: bool, binary, box_coordinates_unpacked
-    ):
-        if expanding:
-            row_col_next, row_col, box_coordinates_unpacked = _next_row_col(
-                top_bottom_left_right=top_bottom_left_right,
-                expanding=expanding,
-                binary=binary,
-                box_coordinates_unpacked=box_coordinates_unpacked,
-            )
-            while _not_only_white(row_col_next) and _has_neighboring_white_pixels(
-                row_col, row_col_next
-            ):
-                row_col_next, row_col, box_coordinates_unpacked = _next_row_col(
-                    top_bottom_left_right=top_bottom_left_right,
-                    expanding=expanding,
-                    binary=binary,
-                    box_coordinates_unpacked=box_coordinates_unpacked,
-                )
-            
-            # Make the first row/col not accepted black.
-            if top_bottom_left_right == "top":
-                binary[row_min, :] = 0
-            elif top_bottom_left_right == "bottom":
-                binary[row_max, :] = 0
-            elif top_bottom_left_right == "left":
-                binary[:, col_min] = 0
-            elif top_bottom_left_right == "right":
-                binary[:, col_max] = 0
-
-        else:
-            row_col_next, _, box_coordinates_unpacked = _next_row_col(
-                top_bottom_left_right=top_bottom_left_right,
-                expanding=False,
-                binary=binary,
-                box_coordinates_unpacked=box_coordinates_unpacked,
-            )
-            while row_col_next.sum() == 0:
-                row_col_next, _, box_coordinates_unpacked = _next_row_col(
-                    top_bottom_left_right=top_bottom_left_right,
-                    expanding=False,
-                    binary=binary,
-                    box_coordinates_unpacked=box_coordinates_unpacked,
-                )
-        return binary, box_coordinates_unpacked
-
-    row = binary[row_min_, col_min : col_max + 1]
-    # row = binarize(gray[row_min_, col_min:col_max], threshold)
-    if not row.sum() == 0:
-        # Exapnd rows to the top
-        row_min_ -= 1
-        # row_next = gray[row_min_, col_min:col_max]
-        row_next = binary[row_min_, col_min : col_max + 1]
-        changes = 0
-        while (
-            _not_only_white(row_next)
-            and _has_neighboring_white_pixels(row, row_next)
-            and changes > 5
-        ):  # and _longest_nonzero_sequence(row_next) > 10: # < np.sqrt(col_max - col_min):
-            row = row_next
-            row_min_ -= 1
-            row_next = binary[row_min_, col_min : col_max + 1]
-            # row_next = binarize(gray[row_min_ - 1, col_min:col_max], threshold)
-            changes += 1
-        # row_min_ += 1
-
-    else:
-        # Shrink rows from the top
-        # Could do this part as `row_max_` is found.
-        row_min_ += 1
-        # row = binarize(gray[row_min_, col_min:col_max], threshold=threshold)
-        row = binary[row_min_, col_min : col_max + 1]
-        while row.sum() == 0 and row_min_ < row_max:
-            # n_rows_top_change += 1
-            row_min_ += 1
-            row = binary[row_min_, col_min : col_max + 1]
-            # row = binarize(gray[row_min_, col_min:col_max], threshold=threshold)
-        # row_min_ -= 1
-    binary[row_min_, :] = 0
-
-    n_rows = row_max - row_min_
-
-    save_cv2_image_tmp(gray[row_min_:row_max, col_min:col_max])
-    save_cv2_image_tmp(binary[row_min_:row_max, col_min:col_max])
-
-    col_min_ = col_min
-    # col = binarize(gray[row_min_:row_max, col_min_], threshold=threshold)
-    col = binary[row_min_ : row_max + 1, col_min_]
-    if not col.sum() == 0:
-        # expand cols to the left
-        col_min_ -= 1
-        # col_next = binarize(gray[row_min_:row_max, col_min_], threshold=threshold)
-        col_next = binary[row_min_ : row_max + 1, col_min_]
-        changes = 0
-        while (
-            _not_only_white(col_next)
-            and _has_neighboring_white_pixels(col, col_next)
-            and changes < 5
-        ):  # and _longest_nonzero_sequence(col_next) > 2: # (row_max - row_min_) // 3:
-            col = col_next
-            col_min_ -= 1
-            # col_next = binarize(gray[row_min_:row_max, col_min_], threshold=threshold)
-            col_next = binary[row_min_ : row_max + 1, col_min_]
-            changes += 1
-
-        # col_min_ += 1
-    else:
-        # shrink cols from the left
-        col_min_ += 1
-        # col = binarize(gray[row_min_:row_max, col_min_], threshold=threshold)
-        col = binary[row_min_ : row_max + 1, col_min_]
-        while col.sum() == 0 and col_max > col_min_:
-            col_min_ += 1
-            # col = binarize(gray[row_min_:row_max, col_min_], threshold=threshold)
-            col = binary[row_min_ : row_max + 1, col_min_]
-        # col_min_ -= 1
-
-    # Ændres til binary i stedet for gray?
-    binary[:, col_min_] = 0
-
-    save_cv2_image_tmp(gray[row_min_:row_max, col_min_:col_max])
-    save_cv2_image_tmp(binary[row_min_:row_max, col_min_ : col_max + 1])
-    col_max_ = col_max
-    # col = binarize(gray[row_min:row_max, col_max], threshold=threshold)
-    col = binary[row_min_:row_max, col_max - 1]
-    save_cv2_image_tmp(col)
-    if not col.sum() == 0:
-        # Expand cols to the right
-        col_max_ += 1
-        # col_next = binarize(gray[row_min:row_max, col_max_], threshold=threshold)
-        col_next = binary[row_min:row_max, col_max_]
-        changes = 0
-        while (
-            _not_only_white(col_next)
-            and _has_neighboring_white_pixels(col, col_next)
-            and changes < 5
-        ):  # and _longest_nonzero_sequence(col_next) > 2: # (row_max - row_min) // 3:
-            col = col_next
-            col_max_ += 1
-            # col_next = binarize(gray[row_min:row_max, col_max_], threshold=threshold)
-            col_next = binary[row_min:row_max, col_max_]
-            save_cv2_image_tmp(col_next)
-            changes += 1
-        # col_max_ -= 1
-
-    else:
-        # Shrink cols from the right
-        col_max_ -= 1
-        # col = binarize(gray[row_min:row_max, col_max_], threshold=threshold)
-        col = gray[row_min:row_max, col_max_]
-        while col.sum() == 0 and col_max_ > col_min_:
-            col_max_ -= 1
-            # col = binarize(gray[row_min:row_max, col_max_], threshold=threshold)
-            col = gray[row_min:row_max, col_max_]
-        # col_max_ += 1
-    binary[:, col_max_] = 0
-
-    # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    crop_ = gray[row_min_:row_max, col_min_:col_max_]
-
-    n_rows = row_max - row_min_
-
-    rows_to_cut = n_rows - np.where(crop_ != 0)[0].max() - 1
-    row_max_ = row_max - rows_to_cut
-
-    crop_refined = gray[row_min_:row_max_, col_min_:col_max_]
-    save_cv2_image_tmp(crop_refined)
-
-    tl_, tr_, br_, bl_ = (
-        (col_min_, row_min_),
-        (col_max_, row_min_),
-        (col_max_, row_max_),
-        (col_min_, row_max_),
-    )
-    anonymized_box["coordinates"] = (tl_, tr_, br_, bl_)
-    return anonymized_box
-
-    split_idx = _split_into_two_boxes(crop_refined)
-    if split_idx:
-        left_side, right_side = crop_refined[:, :split_idx], crop_refined[:, split_idx:]
-        save_cv2_image_tmp(left_side)
-        save_cv2_image_tmp(right_side)
-        left_max_col = np.where(left_side != 0)[1].max() + 1
-        right_min_col = np.where(right_side != 0)[1].min() - 1
-
-        col_min_1 = col_min_
-        col_max_1 = col_min_1 + left_max_col + 1
-        col_min_2 = col_min_ + split_idx + right_min_col
-        col_max_2 = col_max_ + 1
-        row_max_ += 1
-
-        left_side_ = gray[row_min_:row_max_, col_min_1:col_max_1]
-        save_cv2_image_tmp(left_side_)
-        right_side_ = gray[row_min_:row_max_, col_min_2:col_max_2]
-        save_cv2_image_tmp(right_side_)
-
-        tl_1, tr_1, br_1, bl_1 = (
-            (col_min_1, row_min_),
-            (col_max_1, row_min_),
-            (col_max_1, row_max_),
-            (col_min_1, row_max_),
-        )
-
-        tl_2, tr_2, br_2, bl_2 = (
-            (col_min_2, row_min_),
-            (col_max_2, row_min_),
-            (col_max_2, row_max_),
-            (col_min_2, row_max_),
-        )
-
-        anonymized_boxes = [
-            {"coordinates": (tl_1, tr_1, br_1, bl_1)},
-            {"coordinates": (tl_2, tr_2, br_2, bl_2)},
-        ]
-        return anonymized_boxes
-    else:
-        tl_, tr_, br_, bl_ = (
-            (col_min_, row_min_),
-            (col_max_, row_min_),
-            (col_max_, row_max_),
-            (col_min_, row_max_),
-        )
-        anonymized_box["coordinates"] = (tl_, tr_, br_, bl_)
-    return [anonymized_box]
+    box_coordinates_unpacked = [row_min, row_max, col_min, col_max]
+    return row_col_next, row_col, box_coordinates_unpacked
 
 
 def _split_into_two_boxes(crop_refined, threshold=100):
