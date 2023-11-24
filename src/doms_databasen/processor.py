@@ -2,7 +2,7 @@ import os
 from logging import getLogger
 from pathlib import Path
 
-from .text_extraction import extract_text_from_pdf
+from .text_extraction import extract_text_easyocr
 from .utils import read_json, save_dict_to_json
 
 logger = getLogger(__name__)
@@ -69,11 +69,23 @@ class Processor:
         processed_data = tabular_data.copy()
         processed_data["case_id"] = case_id
         pdf_path = case_dir_raw / self.cfg.file_names.pdf_document
-        processed_data["text"] = extract_text_from_pdf(
+        text_anon = extract_text_easyocr(
             pdf_path=pdf_path,
             max_y_difference=self.cfg.max_y_difference,
             gpu=self.cfg.gpu,
+            truncate_image=(
+                self.cfg.truncate_image_top,
+                self.cfg.truncate_image_bottom,
+            ),
         )
+        # Use regex instead?
+        text = text_anon.replace("<anonym>", "").replace("</anonym>", "")
+        processed_data["text_anon"] = text_anon
+        processed_data["text"] = text
+        print("text anon:")
+        print(text_anon)
+        print("text:")
+        print(text)
 
         save_dict_to_json(
             processed_data, case_dir_processed / self.cfg.file_names.processed_data
