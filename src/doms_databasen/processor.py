@@ -73,10 +73,6 @@ class Processor:
             pdf_path=pdf_path,
             max_y_difference=self.cfg.max_y_difference,
             gpu=self.cfg.gpu,
-            truncate_image=(
-                self.cfg.truncate_image_top,
-                self.cfg.truncate_image_bottom,
-            ),
         )
         # Use regex instead?
         text = text_anon.replace("<anonym>", "").replace("</anonym>", "")
