@@ -401,31 +401,36 @@ def get_text_from_anonymized_box(
     crop = gray[row_min : row_max + 1, col_min : col_max + 1]
     save_cv2_image_tmp(crop)
 
-    split_idx = _split_into_two_boxes(crop)
-    if split_idx:
-        col_min_1 = col_min
-        col_max_1 = col_min_1 + split_idx
-        col_min_2 = col_min + split_idx + 1
-        col_max_2 = col_max
+    split_indices = _split_box(crop)
+    anonymized_boxes = []
+    if split_indices:
+        # Get first box
+        first_box = {"coordinates": (row_min, col_min, row_max, col_min + split_indices[0])}
+        
+        anonymized_boxes.append(first_box)
+        
+        # Get box in between first and last box
+        if len(split_indices) > 1:
+            
+            for i, (split_index_1, split_index_2) in enumerate(zip(split_indices[:-1], split_indices[1:])):
+                anonymized_box_ = {"coordinates": (row_min, col_min + split_index_1 + 1, row_max, col_min + split_index_2)}
+                anonymized_boxes.append(anonymized_box_)
 
-        anonymized_boxes_ = [
-            {"coordinates": (row_min, col_min_1, row_max, col_max_1)},
-            {"coordinates": (row_min, col_min_2, row_max, col_max_2)},
-        ]
+        # Get last box
+        last_box = {"coordinates": (row_min, col_min + split_indices[-1] + 1, row_max, col_max)}
+        anonymized_boxes.append(last_box)
     else:
-        anonymized_boxes_ = [anonymized_box]
+        anonymized_boxes.append(anonymized_box)
 
     texts = []
     # anonymized_boxes_ are sorted left to right
-    for anonymized_box_ in anonymized_boxes_:
+    for anonymized_box_ in anonymized_boxes:
         row_min, col_min, row_max, col_max = anonymized_box_["coordinates"]
 
         crop = gray[row_min : row_max + 1, col_min : col_max + 1]
         save_cv2_image_tmp(crop)
 
         crop_boundary = _add_boundary(crop)
-
-        # Opening
 
         # If length of box is short, then there are probably < 2 letters in the box.
         # In this case, scale the image up.
@@ -974,7 +979,7 @@ def _next_row_col(
     return row_col_next, row_col, box_coordinates_unpacked
 
 
-def _split_into_two_boxes(crop_refined, threshold=100):
+def _split_box(crop_refined, threshold=100, gap_threshold=15):
     """
     Split box into two boxes if there is a gap larger than threshold (15 pixels - hardcoded)
     Could change to have multiple splits?
@@ -984,33 +989,22 @@ def _split_into_two_boxes(crop_refined, threshold=100):
     inverted = cv2.bitwise_not(crop_refined)
     save_cv2_image_tmp(inverted)
 
-    # Opening
-    N, M = crop_refined.shape
-    # eroded = cv2.erode(inverted, np.ones((N // 2, 10)), iterations=1)
-    # save_cv2_image_tmp(eroded)
     binary = binarize(inverted, threshold=threshold)
     save_cv2_image_tmp(binary)
     booled = binary.all(axis=0)
 
-    largest_consecutive_sum = 0
-    idx = None
-    current_sum = 0
+    split_indices = []
+
+    consecutive_sum = 0
     for i, b in enumerate(booled):
         if b:
-            current_sum += 1
-            if current_sum > largest_consecutive_sum:
-                largest_consecutive_sum = current_sum
-                idx = i
+            consecutive_sum += 1
         else:
-            # For example, every time this is code is run,
-            # check if current_sum > threshold
-            # and if so, append a split index to a list of split indices.
-            current_sum = 0
-    if largest_consecutive_sum > 15:
-        split_idx = idx - largest_consecutive_sum // 2
-        return split_idx
-    else:
-        return False
+            if consecutive_sum > gap_threshold:
+                split_idx = i - consecutive_sum // 2
+                split_indices.append(split_idx)
+            consecutive_sum = 0
+    return split_indices
 
 
 def _add_boundary(image: np.ndarray) -> np.ndarray:

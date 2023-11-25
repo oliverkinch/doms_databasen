@@ -15,6 +15,7 @@ from src.doms_databasen.text_extraction import (
     find_anonymized_boxes,
     _remove_boundary_noise,
     _refine_anonymized_box,
+    _split_box,
 )
 
 
@@ -146,6 +147,22 @@ def test_refine_anonymized_box(anonymized_box, image_path, anonymized_box_expect
     image = np.array(Image.open(image_path))
     anonymized_box = _refine_anonymized_box(anonymized_box=anonymized_box, image=image)
     assert anonymized_box["coordinates"] == anonymized_box_expected["coordinates"]
+
+
+@pytest.mark.parametrize(
+    "image_path, n_splits_expected",
+    [
+        (
+            "tests/data/processor/box_with_multiple_words.png",
+            5,
+        ),
+    ],
+)
+def test_split_box(image_path, n_splits_expected):
+    image = np.array(Image.open(image_path))
+    split = _split_box(crop_refined=image)
+    assert len(split) == n_splits_expected
+
 
 
 if __name__ == "__main__":
