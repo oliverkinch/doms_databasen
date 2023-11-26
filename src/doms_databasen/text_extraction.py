@@ -34,13 +34,14 @@ class PDFTextReader:
     Args:
         config (DictConfig):
             Config file
-    
+
     Attributes:
         config (DictConfig):
             Config file
         reader (easyocr.Reader):
             Easyocr reader
     """
+
     def __init__(self, config: DictConfig):
         self.config = config
         self.reader = easyocr.Reader(["da"], gpu=config.gpu)
