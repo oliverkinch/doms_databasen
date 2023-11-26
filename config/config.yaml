@@ -49,6 +49,9 @@ threshold_box_confidence: 0.3
 
 split_boxes_line_idx_shift: 8
 
+invert_find_anonymized_boxes: False
+invert_find_underline_anonymizations: True
+
 underline_height_lower_bound: 1
 underline_height_upper_bound: 7
 

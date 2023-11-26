@@ -87,7 +87,9 @@ class PDFTextReader:
                 anonymized_boxes = self._find_anonymized_boxes(image=image.copy())
                 anonymized_boxes_with_text = [
                     self._get_text_from_anonymized_box(
-                        image=image.copy(), anonymized_box=box
+                        image=image.copy(),
+                        anonymized_box=box,
+                        invert=self.config.invert_find_anonymized_boxes,
                     )
                     for box in anonymized_boxes
                 ]
@@ -106,7 +108,11 @@ class PDFTextReader:
                     ),
                 )
                 anonymized_boxes_from_underlines_with_text = [
-                    self._get_text_from_anonymized_box(image, box, invert=True)
+                    self._get_text_from_anonymized_box(
+                        image,
+                        box,
+                        invert=self.config.invert_find_underline_anonymizations,
+                    )
                     for box in anonymized_boxes_from_underlines
                 ]
             else:
