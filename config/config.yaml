@@ -43,7 +43,7 @@ threshold_binarize_anonymized_boxes: 1
 threshold_binarize_refine_anonymized_box: 30
 threshold_binarize_split_indices: 100
 threshold_max_gap: 15
-
+threshold_box_confidence: 0.3
 
 split_boxes_line_idx_shift: 8
 
@@ -56,7 +56,7 @@ message_pdf_has_no_anonymized_boxes: >
   No anonymized boxes detected on first page 1.
   There will therefore not be searched for
   anonymized boxes on the following pages.
-message_pdf_has_underline_anonymizations: >
+message_pdf_has_no_underline_anonymizations: >
   No underline anonymization detected on page 1.
   There will therefore not be searched for
   underlines anonymization on the following pages.

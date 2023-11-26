@@ -5,23 +5,12 @@ import pytest
 from easyocr import Reader
 from PIL import Image
 
-from src.doms_databasen.text_extraction import (
-    _find_anonymized_boxes,
-    _get_blobs,
-    _get_split_indices,
-    _get_text_from_anonymized_box,
-    _get_text_from_boxes,
-    _line_anonymization_to_boxes,
-    _process_image,
-    _refine_anonymized_box,
-    _remove_boundary_noise,
-    extract_text_easyocr,
-)
+from src.doms_databasen.text_extraction import PDFTextReader
 
 
 @pytest.fixture(scope="module")
-def reader(config):
-    return Reader(["da"], gpu=config.gpu)
+def pdf_text_reader(config):
+    return PDFTextReader(config=config)
 
 
 @pytest.mark.parametrize(
@@ -33,28 +22,28 @@ def reader(config):
         ),
     ],
 )
-def test_extract_text_easyocr(pdf_path, expected_text, config, reader):
-    text = extract_text_easyocr(pdf_path=pdf_path, config=config, reader=reader)
+def test_extract_text_easyocr(pdf_text_reader, pdf_path, expected_text):
+    text = pdf_text_reader.extract_text_easyocr(pdf_path=pdf_path)
     assert text == expected_text
 
 
 @pytest.mark.parametrize(
-    "image_path, n_blobs",
+    "image_path, n_blobs_expected",
     [("tests/data/processor/blobs.png", 4)],
 )
-def test_get_blobs(image_path, n_blobs):
+def test_get_blobs(pdf_text_reader, image_path, n_blobs_expected):
     binary_image = np.array(Image.open(image_path))
-    blobs = _get_blobs(binary_image)
-    assert len(blobs) == n_blobs
+    blobs = pdf_text_reader._get_blobs(binary_image)
+    assert len(blobs) == n_blobs_expected
 
 
 @pytest.mark.parametrize(
     "image_path, n_matches_expected",
     [("tests/data/processor/underlines.png", 11)],
 )
-def test_line_anonymization_to_boxes(image_path, n_matches_expected):
+def test_line_anonymization_to_boxes(pdf_text_reader, image_path, n_matches_expected):
     image = np.array(Image.open(image_path))
-    anonymized_boxes, underlines = _line_anonymization_to_boxes(image)
+    anonymized_boxes, underlines = pdf_text_reader._line_anonymization_to_boxes(image)
     assert len(anonymized_boxes) == n_matches_expected
     assert len(underlines) == n_matches_expected
 
@@ -69,9 +58,11 @@ def test_line_anonymization_to_boxes(image_path, n_matches_expected):
         )
     ],
 )
-def test_process_image(image_path, anonymized_boxes, underlines):
+def test_process_image(pdf_text_reader, image_path, anonymized_boxes, underlines):
     image = np.array(Image.open(image_path))
-    processed_image = _process_image(image, anonymized_boxes, underlines)
+    processed_image = pdf_text_reader._process_image(
+        image, anonymized_boxes, underlines
+    )
     assert isinstance(processed_image, np.ndarray)
 
 
@@ -87,8 +78,8 @@ def test_process_image(image_path, anonymized_boxes, underlines):
         )
     ],
 )
-def test_get_text_from_boxes(config, boxes, text_expected):
-    text = _get_text_from_boxes(boxes, config.max_y_difference)
+def test_get_text_from_boxes(pdf_text_reader, boxes, text_expected):
+    text = pdf_text_reader._get_text_from_boxes(boxes)
     assert text == text_expected
 
 
@@ -110,11 +101,11 @@ def test_get_text_from_boxes(config, boxes, text_expected):
     ],
 )
 def test_get_text_from_anonymized_box(
-    reader, image_path, anonymized_box, invert, text_expected
+    pdf_text_reader, image_path, anonymized_box, invert, text_expected
 ):
     image = np.array(Image.open(image_path))
-    anonymized_box = _get_text_from_anonymized_box(
-        reader=reader, image=image, anonymized_box=anonymized_box, invert=invert
+    anonymized_box = pdf_text_reader._get_text_from_anonymized_box(
+        image=image, anonymized_box=anonymized_box, invert=invert
     )
     assert anonymized_box["text"] == text_expected
 
@@ -126,9 +117,9 @@ def test_get_text_from_anonymized_box(
         ("tests/data/processor/page_with_stacked_boxes.png", 9),
     ],
 )
-def test_find_anonymized_boxes(image_path, n_matches_expected):
+def test_find_anonymized_boxes(pdf_text_reader, image_path, n_matches_expected):
     image = np.array(Image.open(image_path))
-    anonymized_boxes = _find_anonymized_boxes(image=image)
+    anonymized_boxes = pdf_text_reader._find_anonymized_boxes(image=image)
     assert len(anonymized_boxes) == n_matches_expected
 
 
@@ -138,10 +129,10 @@ def test_find_anonymized_boxes(image_path, n_matches_expected):
         ("tests/data/processor/boundary_noise.png"),
     ],
 )
-def test_remove_boundary_noise(image_path):
+def test_remove_boundary_noise(pdf_text_reader, image_path):
     binary_image = np.array(Image.open(image_path))
     N, M = binary_image.shape
-    binary_image = _remove_boundary_noise(binary_image)
+    binary_image = pdf_text_reader._remove_boundary_noise(binary_image)
     assert binary_image[:, 0].sum() == 0
     assert binary_image[:, M - 1].sum() == 0
     assert binary_image[0, :].sum() == 0
@@ -158,9 +149,13 @@ def test_remove_boundary_noise(image_path):
         ),
     ],
 )
-def test_refine_anonymized_box(anonymized_box, image_path, anonymized_box_expected):
+def test_refine_anonymized_box(
+    pdf_text_reader, anonymized_box, image_path, anonymized_box_expected
+):
     image = np.array(Image.open(image_path))
-    anonymized_box = _refine_anonymized_box(anonymized_box=anonymized_box, image=image)
+    anonymized_box = pdf_text_reader._refine_anonymized_box(
+        anonymized_box=anonymized_box, image=image
+    )
     assert anonymized_box["coordinates"] == anonymized_box_expected["coordinates"]
 
 
@@ -173,9 +168,9 @@ def test_refine_anonymized_box(anonymized_box, image_path, anonymized_box_expect
         ),
     ],
 )
-def test_get_split_indices(image_path, n_splits_expected):
+def test_get_split_indices(pdf_text_reader, image_path, n_splits_expected):
     image = np.array(Image.open(image_path))
-    split = _get_split_indices(crop=image)
+    split = pdf_text_reader._get_split_indices(crop=image)
     assert len(split) == n_splits_expected
 
 

@@ -26,7 +26,7 @@ from src.doms_databasen.constants import (
 logger = getLogger(__name__)
 
 
-class ReadTextFromPDF:
+class PDFTextReader:
     def __init__(self, config: DictConfig):
         self.config = config
         self.reader = easyocr.Reader(["da"], gpu=config.gpu)
@@ -60,9 +60,9 @@ class ReadTextFromPDF:
             # Log info about which anonymization methods are used in the PDF.
             if i == 1:
                 if not box_anonymization:
-                    logger.info(self.config.message_pdf_has_anonymized_boxes)
+                    logger.info(self.config.message_pdf_has_no_anonymized_boxes)
                 if not underlines_anonymization:
-                    logger.info(self.config.message_pdf_has_underline_anonymizations)
+                    logger.info(self.config.message_pdf_has_no_underline_anonymizations)
 
             if i == 0:
                 # Remove logo top right corner
@@ -70,11 +70,7 @@ class ReadTextFromPDF:
 
             if box_anonymization:
                 anonymized_boxes = self._find_anonymized_boxes(
-                    image=image.copy(),
-                    box_area_min=self.config.box_area_min,
-                    box_height_min=self.config.box_height_min,
-                    box_accept_ratio=self.config.box_accept_ratio,
-                    slight_shift_to_bottom=self.config.slight_shift_to_bottom,
+                    image=image.copy()
                 )
                 anonymized_boxes_with_text = [
                     self._get_text_from_anonymized_box(
@@ -157,7 +153,8 @@ class ReadTextFromPDF:
 
         return pdf_text.strip()
 
-    def _get_blobs(self, binary: np.ndarray) -> list:
+    @staticmethod
+    def _get_blobs(binary: np.ndarray) -> list:
         """Get blobs from binary image.
 
         Find all blobs in a binary image, and return the
@@ -483,7 +480,6 @@ class ReadTextFromPDF:
         self,
         image: np.ndarray,
         anonymized_box: dict,
-        threshold_box: float = 0.3,
         invert: bool = False,
     ) -> dict:
         """Read text from anonymized box.
@@ -493,8 +489,6 @@ class ReadTextFromPDF:
                 Image of the current page.
             anonymized_box (dict):
                 Anonymized box with coordinates.
-            threshold_box (float):
-                Threshold used to filter out easyocr outputs with low confidence.
             invert (bool):
                 Whether to invert the image or not.
                 Easyocr seems to work best with white text on black background.
@@ -555,7 +549,13 @@ class ReadTextFromPDF:
             if len(result) == 0:
                 text = ""
             else:
-                text = " ".join([box[1] for box in result if box[2] > threshold_box])
+                text = " ".join(
+                    [
+                        box[1]
+                        for box in result
+                        if box[2] > self.config.threshold_box_confidence
+                    ]
+                )
 
             texts.append(text)
 
@@ -714,6 +714,7 @@ class ReadTextFromPDF:
         """
         return not np.all(np.bool_(a))
 
+    @staticmethod
     def _binarize(
         image: np.ndarray, threshold: int, val_min: int = 0, val_max: int = 1
     ) -> np.ndarray:

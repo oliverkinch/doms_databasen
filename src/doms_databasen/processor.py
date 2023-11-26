@@ -5,13 +5,13 @@ from pathlib import Path
 import easyocr
 
 from .constants import N_FILES_PROCESSED_CASE_DIR, N_FILES_RAW_CASE_DIR
-from .text_extraction import extract_text_easyocr
+from .text_extraction import PDFTextReader
 from .utils import read_json, save_dict_to_json
 
 logger = getLogger(__name__)
 
 
-class Processor:
+class Processor(PDFTextReader):
     """Processor for scraped data from the DomsDatabasen website.
 
     Args:
@@ -30,6 +30,7 @@ class Processor:
     """
 
     def __init__(self, cfg) -> None:
+        super().__init__(config=cfg)
         self.cfg = cfg
         self.data_raw_dir = Path(self.cfg.paths.data_raw_dir)
         self.data_processed_dir = Path(self.cfg.paths.data_processed_dir)
@@ -73,10 +74,8 @@ class Processor:
         processed_data = tabular_data.copy()
         processed_data["case_id"] = case_id
         pdf_path = case_dir_raw / self.cfg.file_names.pdf_document
-        text_anonymized = extract_text_easyocr(
-            config=self.cfg,
+        text_anonymized = self.extract_text_easyocr(
             pdf_path=pdf_path,
-            reader=self.reader,
         )
         # Use regex instead?
         text = text_anonymized.replace("<anonym>", "").replace("</anonym>", "")
