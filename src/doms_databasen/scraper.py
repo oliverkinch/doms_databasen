@@ -27,11 +27,11 @@ class DomsDatabasenScraper:
     """Scraper for domsdatabasen.dk
 
     Args:
-        cfg (DictConfig):
+        config (DictConfig):
             Config file
 
     Attributes:
-        cfg (DictConfig):
+        config (DictConfig):
             Config file
         test_dir (Path):
             Path to test directory
@@ -47,15 +47,15 @@ class DomsDatabasenScraper:
             Chrome webdriver
     """
 
-    def __init__(self, cfg) -> None:
-        self.cfg = cfg
-        self.test_dir = Path(self.cfg.paths.test_tmp_dir)
+    def __init__(self, config) -> None:
+        self.config = config
+        self.test_dir = Path(self.config.paths.test_tmp_dir)
         self.download_dir = (
-            Path(self.cfg.paths.download_dir) if not self.cfg.testing else self.test_dir
+            Path(self.config.paths.download_dir) if not self.config.testing else self.test_dir
         )
-        self.data_raw_dir = Path(self.cfg.paths.data_raw_dir)
+        self.data_raw_dir = Path(self.config.paths.data_raw_dir)
 
-        self.force = self.cfg.scrape.force
+        self.force = self.config.scrape.force
         self.cookies_clicked = False
         self.consecutive_nonexistent_page_count = (
             0  # Only relevant when scraping all cases.
@@ -79,8 +79,8 @@ class DomsDatabasenScraper:
         case_id = str(case_id)
         case_dir = (
             self.data_raw_dir / case_id
-            if not self.cfg.testing
-            else self.test_dir / self.cfg.scrape.test_case_name
+            if not self.config.testing
+            else self.test_dir / self.config.scrape.test_case_name
         )
 
         if self._already_scraped(case_dir) and not self.force:
@@ -91,7 +91,7 @@ class DomsDatabasenScraper:
 
         logger.info(f"Scraping case {case_id}")
 
-        case_url = f"{self.cfg.domsdatabasen.url}/{case_id}"
+        case_url = f"{self.config.domsdatabasen.url}/{case_id}"
         self.driver.get(case_url)
         # Wait for page to load
         time.sleep(1)
@@ -120,7 +120,7 @@ class DomsDatabasenScraper:
 
         self._download_pdf(case_dir)
         tabular_data = self._get_tabular_data()
-        save_dict_to_json(tabular_data, case_dir / self.cfg.file_names.tabular_data)
+        save_dict_to_json(tabular_data, case_dir / self.config.file_names.tabular_data)
 
     def scrape_all(self) -> None:
         """Scrapes all cases from domsdatabasen.dk
@@ -134,7 +134,7 @@ class DomsDatabasenScraper:
         case_id = 1
         while (
             self.consecutive_nonexistent_page_count
-            < self.cfg.max_consecutive_nonexistent_page_count
+            < self.config.max_consecutive_nonexistent_page_count
         ):
             self.scrape(str(case_id))
             case_id += 1
@@ -225,7 +225,7 @@ class DomsDatabasenScraper:
         """
         files_before_download = set(os.listdir(self.download_dir))
 
-        download_element = WebDriverWait(self.driver, self.cfg.sleep).until(
+        download_element = WebDriverWait(self.driver, self.config.sleep).until(
             EC.presence_of_element_located((By.XPATH, XPATHS["download_pdf"]))
         )
 
@@ -234,10 +234,10 @@ class DomsDatabasenScraper:
         if file_name:
             from_ = (
                 self.download_dir / file_name
-                if not self.cfg.testing
+                if not self.config.testing
                 else self.test_dir / file_name
             )
-            to_ = case_dir / self.cfg.file_names.pdf_document
+            to_ = case_dir / self.config.file_names.pdf_document
             shutil.move(from_, to_)
         else:
             raise PDFDownloadException()
@@ -261,7 +261,7 @@ class DomsDatabasenScraper:
 
     def _accept_cookies(self) -> None:
         """Accepts cookies on the page."""
-        element = WebDriverWait(self.driver, self.cfg.sleep).until(
+        element = WebDriverWait(self.driver, self.config.sleep).until(
             EC.presence_of_element_located((By.XPATH, XPATHS["Accept cookies"]))
         )
         element.click()
