@@ -51,7 +51,9 @@ class DomsDatabasenScraper:
         self.config = config
         self.test_dir = Path(self.config.paths.test_tmp_dir)
         self.download_dir = (
-            Path(self.config.paths.download_dir) if not self.config.testing else self.test_dir
+            Path(self.config.paths.download_dir)
+            if not self.config.testing
+            else self.test_dir
         )
         self.data_raw_dir = Path(self.config.paths.data_raw_dir)
 
