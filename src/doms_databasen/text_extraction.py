@@ -1,3 +1,5 @@
+"""Code to read text from PDFs obtained from domsdatabasen.dk"""
+
 from logging import getLogger
 from typing import List, Tuple
 
