@@ -1,3 +1,5 @@
+"""Scraper for domsdatabasen.dk"""
+
 import logging
 import os
 import shutil
