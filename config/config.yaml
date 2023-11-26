@@ -28,14 +28,30 @@ sleep: 5
 max_consecutive_nonexistent_page_count: 100
 
 ## Process
-max_y_difference: 25
 gpu: False
+
+max_y_difference: 25
+
+neighbor_distance_max: 1
+
 box_area_min: 2000
 box_height_min: 35
 box_accept_ratio: 0.4
-slight_shift: 5
+slight_shift_to_bottom: 5
+
+threshold_binarize_anonymized_boxes: 1
+threshold_binarize_refine_anonymized_box: 30
+threshold_binarize_split_indices: 100
+threshold_max_gap: 15
+
+
+split_boxes_line_idx_shift: 8
+
 underline_height_lower_bound: 1
 underline_height_upper_bound: 7
+
+max_expand_steps: 10
+
 message_pdf_has_no_anonymized_boxes: >
   No anonymized boxes detected on first page 1.
   There will therefore not be searched for
