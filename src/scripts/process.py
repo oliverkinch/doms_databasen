@@ -28,16 +28,16 @@ logger = logging.getLogger(__name__)
 
 
 @hydra.main(config_path="../../config", config_name="config")
-def main(cfg: DictConfig) -> None:
-    processor = Processor(cfg=cfg)
-    if cfg.process.all:
+def main(config: DictConfig) -> None:
+    processor = Processor(config=config)
+    if config.process.all:
         processor.process_all()
-    elif cfg.process.case_id:
-        processor.process(cfg.process.case_id)
+    elif config.process.case_id:
+        processor.process(config.process.case_id)
     else:
-        logger.info(cfg.process.messages.give_correct_inputs)
+        logger.info(config.process.messages.give_correct_inputs)
 
-    logger.info(cfg.process.messages.done)
+    logger.info(config.process.messages.done)
 
 
 if __name__ == "__main__":
