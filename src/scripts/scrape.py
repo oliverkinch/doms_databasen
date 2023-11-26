@@ -5,7 +5,7 @@ Examples usages:
     >>> python src/scripts/scrape.py 'scrape.case_id=12'
 
     Scrape single case and overwrite existing data:
-    >>> python src/scripts/scrape.py 'scrape.case_id=123' 'force=True'
+    >>> python src/scripts/scrape.py 'scrape.case_id=123' 'scrape.force=True'
 
     Scrape all cases:
     >>> python src/scripts/scrape.py 'scrape.all=True' 'scrape.force=False'
@@ -28,16 +28,16 @@ logger = logging.getLogger(__name__)
 
 
 @hydra.main(config_path="../../config", config_name="config")
-def main(cfg: DictConfig) -> None:
-    scraper = DomsDatabasenScraper(cfg=cfg)
-    if cfg.scrape.all:
+def main(config: DictConfig) -> None:
+    scraper = DomsDatabasenScraper(config=config)
+    if config.scrape.all:
         scraper.scrape_all()
-    elif cfg.scrape.case_id:
-        scraper.scrape(cfg.scrape.case_id)
+    elif config.scrape.case_id:
+        scraper.scrape(config.scrape.case_id)
     else:
-        logger.info(cfg.scrape.messages.give_correct_inputs)
+        logger.info(config.scrape.messages.give_correct_inputs)
 
-    logger.info(cfg.scrape.messages.done)
+    logger.info(config.scrape.messages.done)
 
 
 if __name__ == "__main__":

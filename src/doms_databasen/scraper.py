@@ -61,8 +61,8 @@ class DomsDatabasenScraper:
             0  # Only relevant when scraping all cases.
         )
 
-        self.intialize_downloader_folder()
-        self.driver = self.start_driver()
+        self._intialize_downloader_folder()
+        self.driver = self._start_driver()
 
     def scrape(self, case_id: str) -> bool:
         """Scrapes a single case from domsdatabasen.dk
@@ -139,7 +139,7 @@ class DomsDatabasenScraper:
             self.scrape(str(case_id))
             case_id += 1
 
-    def start_driver(self) -> webdriver.Chrome:
+    def _start_driver(self) -> webdriver.Chrome:
         """Starts a Chrome webdriver.
 
         Returns:
@@ -166,7 +166,7 @@ class DomsDatabasenScraper:
         )
         return driver
 
-    def intialize_downloader_folder(self) -> None:
+    def _intialize_downloader_folder(self) -> None:
         """Initializes the download folder.
 
         Deletes the download folder if it exists and creates a new one.
@@ -276,7 +276,7 @@ class DomsDatabasenScraper:
             bool:
                 True if case exists. False otherwise.
         """
-        return not self.element_exists(XPATHS["Fejlkode 404"])
+        return not self._element_exists(XPATHS["Fejlkode 404"])
 
     def _case_is_accessible(self) -> bool:
         """Checks if the case is accessible.
@@ -288,9 +288,9 @@ class DomsDatabasenScraper:
             bool:
                 True if case is accessible. False otherwise.
         """
-        return not self.element_exists(XPATHS["Sagen er ikke tilgængelig"])
+        return not self._element_exists(XPATHS["Sagen er ikke tilgængelig"])
 
-    def element_exists(self, xpath) -> bool:
+    def _element_exists(self, xpath) -> bool:
         """Checks if an element exists on the page.
 
         Args:
