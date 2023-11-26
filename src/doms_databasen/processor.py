@@ -2,6 +2,9 @@ import os
 from logging import getLogger
 from pathlib import Path
 
+import easyocr
+
+from .constants import N_FILES_PROCESSED_CASE_DIR, N_FILES_RAW_CASE_DIR
 from .text_extraction import extract_text_easyocr
 from .utils import read_json, save_dict_to_json
 
@@ -31,6 +34,7 @@ class Processor:
         self.data_raw_dir = Path(self.cfg.paths.data_raw_dir)
         self.data_processed_dir = Path(self.cfg.paths.data_processed_dir)
         self.force = self.cfg.process.force
+        self.reader = easyocr.Reader(["da"], gpu=self.cfg.gpu)
 
     def process(self, case_id) -> None:
         """Processes a single case.
@@ -69,17 +73,17 @@ class Processor:
         processed_data = tabular_data.copy()
         processed_data["case_id"] = case_id
         pdf_path = case_dir_raw / self.cfg.file_names.pdf_document
-        text_anon = extract_text_easyocr(
+        text_anonymized = extract_text_easyocr(
+            config=self.cfg,
             pdf_path=pdf_path,
-            max_y_difference=self.cfg.max_y_difference,
-            gpu=self.cfg.gpu,
+            reader=self.reader,
         )
         # Use regex instead?
-        text = text_anon.replace("<anonym>", "").replace("</anonym>", "")
-        processed_data["text_anon"] = text_anon
+        text = text_anonymized.replace("<anonym>", "").replace("</anonym>", "")
+        processed_data["text_anonymized"] = text_anonymized
         processed_data["text"] = text
         print("text anon:")
-        print(text_anon)
+        print(text_anonymized)
         print("text:")
         print(text)
 
@@ -117,7 +121,7 @@ class Processor:
         """
         return (
             case_dir.exists()
-            and len(os.listdir(case_dir)) == self.cfg.n_files_processed_case_dir
+            and len(os.listdir(case_dir)) == N_FILES_PROCESSED_CASE_DIR
         )
 
     def _raw_data_exists(self, case_dir) -> bool:
@@ -137,7 +141,4 @@ class Processor:
             bool:
                 True if case has already been scraped. False otherwise.
         """
-        return (
-            case_dir.exists()
-            and len(os.listdir(case_dir)) == self.cfg.n_files_raw_case_dir
-        )
+        return case_dir.exists() and len(os.listdir(case_dir)) == N_FILES_RAW_CASE_DIR

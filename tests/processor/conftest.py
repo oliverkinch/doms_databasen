@@ -1,6 +1,5 @@
-from hydra import compose, initialize
 import pytest
-
+from hydra import compose, initialize
 
 # Initialise Hydra
 initialize(config_path="../../config", version_base=None)
