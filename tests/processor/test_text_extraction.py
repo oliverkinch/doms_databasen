@@ -20,6 +20,10 @@ def pdf_text_reader(config):
             "tests/data/processor/no_anonymization.pdf",
             "No anonymizations, so tika will read the text and \nwill do it correctly.;:..",
         ),
+        (
+            "tests/data/processor/underlines.pdf",
+            "Noget tekst hvor ord som er <anonym>understreget</anonym>\nvil blive anonymiseret",
+        ),
     ],
 )
 def test_extract_text_easyocr(pdf_text_reader, pdf_path, expected_text):
@@ -186,11 +190,9 @@ if __name__ == "__main__":
         overrides=["testing=True"],
     )
 
-    r = Reader(["da"], gpu=config.gpu)
-    pdf_path = "tests/data/processor/Sbizhub_C2219080509040.pdf"
-    expected_text = (
-        "No anonymizations, so tika will read the text and \nwill do it correctly.;:.."
-    )
+    pdf_path = "tests/data/processor/underlines.pdf"
+    expected_text = "Noget tekst hvor ord som er <anonym>understreget</anonym> vil blive anonymiseret"
+    pdf_text_reader_ = PDFTextReader(config=config)
     test_extract_text_easyocr(
-        pdf_path=pdf_path, config=config, reader=r, expected_text=expected_text
+        pdf_text_reader=pdf_text_reader_, pdf_path=pdf_path, expected_text=expected_text
     )

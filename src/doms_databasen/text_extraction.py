@@ -69,9 +69,7 @@ class PDFTextReader:
                 image = self._remove_logo(image=image)
 
             if box_anonymization:
-                anonymized_boxes = self._find_anonymized_boxes(
-                    image=image.copy()
-                )
+                anonymized_boxes = self._find_anonymized_boxes(image=image.copy())
                 anonymized_boxes_with_text = [
                     self._get_text_from_anonymized_box(
                         image=image.copy(), anonymized_box=box

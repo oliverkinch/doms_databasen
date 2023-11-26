@@ -13,8 +13,10 @@ paths:
   data_raw_dir: data/raw/
   data_processed_dir: data/processed/
   data_final_dir: data/final/
-  test_dir: tmp/
-  test_case_dir: test_case/
+  test_tmp_dir: tmp/
+  # Paths for testing the processor
+  test_data_raw_dir: tests/data/processor/raw/
+  # test_case_dir: test_case/
 
 file_names:
   tabular_data: tabular_data.json
@@ -69,15 +71,24 @@ message_tika_failed: >
   Easyocr will be used to read the text.
 
 
+message_case_not_found: >
+  The case was not found. 
+  Case id:
+message_case_already_processed: >
+  The case has already been processed. Use 'process.force' to overwrite
+  Case id:
+message_processing_case: >
+  Processing case:
+message_case_done: >
+  Done with case:
+message_processing_all_cases: >
+  Processing all cases.
+
+testing: False
 
 ### Remove logo on first page
 logo_row_idx: 500
 logo_col_idx: 1500
-
-# Testing
-testing: False
-test_case_name: test_case
-test_case_id: "1"
 
 # Scrape arguments
 scrape:
@@ -90,6 +101,8 @@ scrape:
       or use 'all' to scrape all cases.
     done: >
       Scraping done!
+  test_case_name: test_case
+  test_case_id: "1"
 
 # Process arguments
 process:
@@ -102,6 +115,7 @@ process:
       or use 'all' to process all cases.
     done: >
       Processing done!
+  test_case_id: "1"
 
 # Finalize arguments
 finalize:

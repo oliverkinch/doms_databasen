@@ -1,8 +1,9 @@
 import os
+import re
 from logging import getLogger
 from pathlib import Path
 
-import easyocr
+from omegaconf import DictConfig
 
 from .constants import N_FILES_PROCESSED_CASE_DIR, N_FILES_RAW_CASE_DIR
 from .text_extraction import PDFTextReader
@@ -15,11 +16,11 @@ class Processor(PDFTextReader):
     """Processor for scraped data from the DomsDatabasen website.
 
     Args:
-        cfg (DictConfig):
+        config (DictConfig):
             Config file
 
     Attributes:
-        cfg (DictConfig):
+        config (DictConfig):
             Config file
         data_raw_dir (Path):
             Path to raw data directory
@@ -29,15 +30,18 @@ class Processor(PDFTextReader):
             If True, existing data will be overwritten.
     """
 
-    def __init__(self, cfg) -> None:
-        super().__init__(config=cfg)
-        self.cfg = cfg
-        self.data_raw_dir = Path(self.cfg.paths.data_raw_dir)
-        self.data_processed_dir = Path(self.cfg.paths.data_processed_dir)
-        self.force = self.cfg.process.force
-        self.reader = easyocr.Reader(["da"], gpu=self.cfg.gpu)
+    def __init__(self, config: DictConfig) -> None:
+        super().__init__(config=config)
+        self.config = config
+        self.data_raw_dir = (
+            Path(self.config.paths.data_raw_dir)
+            if not self.config.testing
+            else Path(self.config.paths.test_data_raw_dir)
+        )
+        self.data_processed_dir = Path(self.config.paths.data_processed_dir)
+        self.force = self.config.process.force
 
-    def process(self, case_id) -> None:
+    def process(self, case_id: str) -> None:
         """Processes a single case.
 
         This function takes the raw tabular data and
@@ -54,45 +58,48 @@ class Processor(PDFTextReader):
 
         # Check if raw data for case ID exists.
         if not self._raw_data_exists(case_dir_raw):
-            logger.info(f"Case ID {case_id} has not been scraped.")
+            logger.info(f"{self.config.message_case_not_found} {case_id}")
             return
 
         # If case has already been processed, skip, unless force=True.
         if self._already_processed(case_dir_processed) and not self.force:
-            logger.info(
-                f"Case {case_id} is already processed. Use 'process.force' to overwrite"
-            )
+            logger.info(f"{self.config.message_case_already_processed} {case_id}")
             return
 
         # Process data for the case.
-        logger.info(f"Processing case {case_id}")
+        logger.info(f"{self.config.message_processing_case} {case_id}")
 
         case_dir_processed.mkdir(parents=True, exist_ok=True)
 
-        tabular_data = read_json(case_dir_raw / self.cfg.file_names.tabular_data)
+        tabular_data = read_json(case_dir_raw / self.config.file_names.tabular_data)
 
-        processed_data = tabular_data.copy()
+        processed_data = {}
+        processed_data["tabular_data"] = tabular_data
         processed_data["case_id"] = case_id
-        pdf_path = case_dir_raw / self.cfg.file_names.pdf_document
+        pdf_path = case_dir_raw / self.config.file_names.pdf_document
         text_anonymized = self.extract_text_easyocr(
             pdf_path=pdf_path,
         )
-        # Use regex instead?
-        text = text_anonymized.replace("<anonym>", "").replace("</anonym>", "")
-        processed_data["text_anonymized"] = text_anonymized
-        processed_data["text"] = text
-        print("text anon:")
-        print(text_anonymized)
-        print("text:")
-        print(text)
 
-        save_dict_to_json(
-            processed_data, case_dir_processed / self.cfg.file_names.processed_data
-        )
+        # Remove anonymization tags from text.
+        text = re.sub(r"<anonym.*</anonym>", "", text_anonymized)
+        processed_data["text_anon_tagged"] = text_anonymized
+        processed_data["text"] = text
+
+        if not self.config.testing:
+            save_dict_to_json(
+                processed_data,
+                case_dir_processed / self.config.file_names.processed_data,
+            )
+
+        logger.info(f"{self.config.message_case_done} {case_id}")
+
+        # Return data for testing purposes.
+        return processed_data
 
     def process_all(self) -> None:
         """Processes all cases in data/raw"""
-        logger.info("Processing all cases")
+        logger.info(self.config.message_processing_all_cases)
         case_ids = sorted(
             [
                 case_path.name

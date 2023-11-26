@@ -47,7 +47,7 @@ class DomsDatabasenScraper:
 
     def __init__(self, cfg) -> None:
         self.cfg = cfg
-        self.test_dir = Path(self.cfg.paths.test_dir)
+        self.test_dir = Path(self.cfg.paths.test_tmp_dir)
         self.download_dir = (
             Path(self.cfg.paths.download_dir) if not self.cfg.testing else self.test_dir
         )
@@ -78,7 +78,7 @@ class DomsDatabasenScraper:
         case_dir = (
             self.data_raw_dir / case_id
             if not self.cfg.testing
-            else self.test_dir / self.cfg.test_case_name
+            else self.test_dir / self.cfg.scrape.test_case_name
         )
 
         if self._already_scraped(case_dir) and not self.force:
