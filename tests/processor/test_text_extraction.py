@@ -2,7 +2,6 @@
 
 import numpy as np
 import pytest
-from easyocr import Reader
 from PIL import Image
 
 from src.doms_databasen.text_extraction import PDFTextReader
@@ -79,6 +78,13 @@ def test_process_image(pdf_text_reader, image_path, anonymized_boxes, underlines
                 {"coordinates": (80, 0, 110, 100), "text": "smukke"},
             ],
             "Hej\nsmukke",
+        ),
+        (
+            [
+                {"coordinates": (0, 0, 30, 75), "text": "Hej"},
+                {"coordinates": (3100, 1300, 3150, 1350), "text": "smukke"},
+            ],
+            "Hej",
         )
     ],
 )
@@ -179,20 +185,4 @@ def test_get_split_indices(pdf_text_reader, image_path, n_splits_expected):
 
 
 if __name__ == "__main__":
-    import pytest
-    from hydra import compose, initialize
-
-    # Initialise Hydra
-    initialize(config_path="../../config", version_base=None)
-
-    config = compose(
-        config_name="config",
-        overrides=["testing=True"],
-    )
-
-    pdf_path = "tests/data/processor/underlines.pdf"
-    expected_text = "Noget tekst hvor ord som er <anonym>understreget</anonym> vil blive anonymiseret"
-    pdf_text_reader_ = PDFTextReader(config=config)
-    test_extract_text_easyocr(
-        pdf_text_reader=pdf_text_reader_, pdf_path=pdf_path, expected_text=expected_text
-    )
+    pytest.main([__file__ + "::test_get_text_from_boxes"])

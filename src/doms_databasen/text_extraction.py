@@ -429,13 +429,54 @@ class PDFTextReader:
         for i, line in enumerate(lines):
             lines[i] = sorted(line, key=lambda box: self._left_x_cordinate(box))
 
+        # Ignore unwanted lines
+        # Currently only footnotes are ignored.
+        # Might want to add more conditions later.
+        # For example, ignore page numbers.
+        lines_ = [line for line in lines if not self._ignore_line(line)]
+        
         # Each bounding box on a line is joined together with a space,
         # and the lines of text are joined together with \n.
         page_text = "\n".join(
-            [" ".join([box["text"] for box in line]) for line in lines]
+            [" ".join([box["text"] for box in line]) for line in lines_]
         ).strip()
         return page_text
+    
+    def _ignore_line(self, line: List[dict]) -> bool:
+        """Checks if line should be ignored.
+        
+        We want to ignore lines that are footnotes.
+        Might want to add more conditions later.
+        For example, ignore page numbers.
 
+        Args:
+            line (List[dict]):
+                List of boxes on the line.
+        
+        Returns:
+            bool:
+                True if line should be ignored. False otherwise.
+        """
+        first_box = line[0]
+        return self._is_footnote(first_box)
+
+    def _is_footnote(self, first_box: dict):
+        """Checks if line is a footnote.
+
+        If the first box in the line is far to the right and far down,
+        then it is probably a footnote.
+
+        Args:
+            first_box (dict):
+                First box in line.
+            
+        Returns:
+            bool:
+                True if line is a footnote. False otherwise.
+        """
+        row_min, col_min, _, _ = first_box["coordinates"]
+        return col_min > self.config.line_start_ignore_col and row_min > self.config.line_start_ignore_row
+    
     @staticmethod
     def _left_x_cordinate(anonymized_box: dict) -> int:
         """Returns the left x coordinate of a box.
@@ -864,7 +905,7 @@ class PDFTextReader:
 
         row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
 
-        # +1 as slice is exclusive and boxes coordinates are inclusive.
+        # +1 as slice is exclusive and box coordinates are inclusive.
         crop = gray[row_min : row_max + 1, col_min : col_max + 1]
 
         # If empty/black box, box should be ignored
