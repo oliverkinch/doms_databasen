@@ -183,6 +183,25 @@ def test_get_split_indices(pdf_text_reader, image_path, n_splits_expected):
     split = pdf_text_reader._get_split_indices(crop=image)
     assert len(split) == n_splits_expected
 
+@pytest.mark.parametrize(
+    "image_path, n_duplicates_expected",
+    [
+        ("tests/data/processor/double_underline.png", 1),
+    ],
+)
+def test_no_boxes_with_too_much_overlap(pdf_text_reader, image_path, n_duplicates_expected):
+    image = np.array(Image.open(image_path))
+    bounds = (
+        pdf_text_reader.config.underline_height_lower_bound,
+        pdf_text_reader.config.underline_height_upper_bound,
+    )
+    (
+        boxes,
+        underlines,
+    ) = pdf_text_reader._line_anonymization_to_boxes(image=image, bounds=bounds)
+
+    assert len(underlines) - len(boxes) == n_duplicates_expected
+
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_get_text_from_boxes"])
+    pytest.main([__file__ + "::test_no_boxes_with_too_much_overlap"])
