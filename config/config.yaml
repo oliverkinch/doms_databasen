@@ -40,6 +40,7 @@ box_area_min: 2000
 box_height_min: 35
 box_accept_ratio: 0.4
 slight_shift_to_bottom: 5
+iou_overlap_threshold: 0.5
 
 threshold_binarize_anonymized_boxes: 1
 threshold_binarize_refine_anonymized_box: 30
@@ -113,7 +114,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "3"
+  case_id: "1586"
   all: False
   messages:
     give_correct_input: >

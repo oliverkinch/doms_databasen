@@ -252,11 +252,117 @@ class PDFTextReader:
                 anonymized_box_refined = self._refine_anonymized_box(
                     anonymized_box, image_inverted
                 )
+
                 if anonymized_box_refined:
-                    anonymized_boxes.append(anonymized_box_refined)
+                    # Some anonymizations have two underlines, which
+                    # results in two boxes overlapping.
+                    box_is_duplicate = any(
+                        self._too_much_overlap(box_1=anonymized_box_refined, box_2=box)
+                        for box in anonymized_boxes
+                    )
+                    # Only store boxes that are not duplicates
+                    if not box_is_duplicate:
+                        anonymized_boxes.append(anonymized_box_refined)
+
+                    # Store all underlines, so that they can be removed from the image later.
                     underlines.append(blob.bbox)
 
         return anonymized_boxes, underlines
+
+    def _too_much_overlap(self, box_1: dict, box_2: dict) -> bool:
+        """Used to determine if two boxes overlap too much.
+
+        Case 1586 page 4 has an anonymization with two underlines,
+        which results in two boxes overlapping. This function is used
+        to determine if the boxes overlap too much.
+
+        Args:
+            box_1 (dict):
+                Anonymized box with coordinates.
+            box_2 (dict):
+                Anonymized box with coordinates.
+
+        Returns:
+            bool:
+                True if boxes overlap too much. False otherwise.
+        """
+        return (
+            self._intersection_over_union(box_1=box_1, box_2=box_2)
+            > self.config.iou_overlap_threshold
+        )
+
+    def _intersection_over_union(self, box_1: dict, box_2: dict) -> float:
+        """Calculates intersection over union (IoU) between two boxes.
+
+        Args:
+            box_1 (dict):
+                Anonymized box with coordinates.
+            box_2 (dict):
+                Anonymized box with coordinates.
+
+        Returns:
+            float:
+                Intersection over union (IoU) between two boxes.
+        """
+        return self._intersection(box_1=box_1, box_2=box_2) / self._union(
+            box_1=box_1, box_2=box_2
+        )
+
+    @staticmethod
+    def _intersection(box_1: dict, box_2: dict) -> float:
+        """Calculates intersection between two boxes.
+
+        Args:
+            box_1 (dict):
+                Anonymized box with coordinates.
+            box_2 (dict):
+                Anonymized box with coordinates.
+
+        Returns:
+            float:
+                Intersection between two boxes.
+        """
+        row_min1, col_min1, row_max1, col_max1 = box_1["coordinates"]
+        row_min2, col_min2, row_max2, col_max2 = box_2["coordinates"]
+        y_side_length = min(row_max1, row_max2) - max(row_min1, row_min2)
+        x_side_length = min(col_max1, col_max2) - max(col_min1, col_min2)
+        return (
+            y_side_length * x_side_length
+            if y_side_length > 0 and x_side_length > 0
+            else 0
+        )
+
+    def _union(self, box_1: dict, box_2: dict) -> float:
+        """Calculates the area of the union between two boxes.
+
+        Args:
+            box_1 (dict):
+                Anonymized box with coordinates.
+            box_2 (dict):
+                Anonymized box with coordinates.
+
+        Returns:
+            float:
+                area of the union between the two boxes.
+        """
+        area_1 = self._area(box=box_1)
+        area_2 = self._area(box=box_2)
+        return area_1 + area_2 - self._intersection(box_1=box_1, box_2=box_2)
+
+    @staticmethod
+    def _area(box: dict) -> float:
+        """Calculates the area of a box.
+
+        Args:
+            box (dict):
+                Anonymized box with coordinates.
+
+        Returns:
+            float:
+                Area of the box.
+        """
+        row_min, col_min, row_max, col_max = box["coordinates"]
+        return (row_max - row_min) * (col_max - col_min)
 
     def _remove_logo(self, image: np.ndarray) -> np.ndarray:
         """Removes logo from image.
@@ -434,17 +540,17 @@ class PDFTextReader:
         # Might want to add more conditions later.
         # For example, ignore page numbers.
         lines_ = [line for line in lines if not self._ignore_line(line)]
-        
+
         # Each bounding box on a line is joined together with a space,
         # and the lines of text are joined together with \n.
         page_text = "\n".join(
             [" ".join([box["text"] for box in line]) for line in lines_]
         ).strip()
         return page_text
-    
+
     def _ignore_line(self, line: List[dict]) -> bool:
         """Checks if line should be ignored.
-        
+
         We want to ignore lines that are footnotes.
         Might want to add more conditions later.
         For example, ignore page numbers.
@@ -452,7 +558,7 @@ class PDFTextReader:
         Args:
             line (List[dict]):
                 List of boxes on the line.
-        
+
         Returns:
             bool:
                 True if line should be ignored. False otherwise.
@@ -469,14 +575,17 @@ class PDFTextReader:
         Args:
             first_box (dict):
                 First box in line.
-            
+
         Returns:
             bool:
                 True if line is a footnote. False otherwise.
         """
         row_min, col_min, _, _ = first_box["coordinates"]
-        return col_min > self.config.line_start_ignore_col and row_min > self.config.line_start_ignore_row
-    
+        return (
+            col_min > self.config.line_start_ignore_col
+            and row_min > self.config.line_start_ignore_row
+        )
+
     @staticmethod
     def _left_x_cordinate(anonymized_box: dict) -> int:
         """Returns the left x coordinate of a box.
@@ -1340,3 +1449,13 @@ def save_cv2_image_tmp(image):
     if image.max() < 2:
         image = image * 255
     cv2.imwrite("tmp.png", image)
+
+
+def draw_box(image, box):
+    """Draws box on image.
+
+    Used for debugging.
+    """
+    row_min, col_min, row_max, col_max = box["coordinates"]
+    image[row_min : row_max + 1, col_min : col_max + 1, :] = 0
+    save_cv2_image_tmp(image)
