@@ -85,7 +85,7 @@ def test_process_image(pdf_text_reader, image_path, anonymized_boxes, underlines
                 {"coordinates": (3100, 1300, 3150, 1350), "text": "smukke"},
             ],
             "Hej",
-        )
+        ),
     ],
 )
 def test_get_text_from_boxes(pdf_text_reader, boxes, text_expected):
