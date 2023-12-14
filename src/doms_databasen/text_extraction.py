@@ -689,7 +689,7 @@ class PDFTextReader:
             # If length of box is short, then there are probably only a few letters in the box.
             # In this case, scale the image up.
             box_length = col_max - col_min
-            scale = 1 if box_length > BOX_LENGTH_SCALE_THRESHOLD else 2
+            scale = 1 if box_length > BOX_LENGTH_SCALE_THRESHOLD else BOX_LENGTH_SCALE_THRESHOLD / box_length + 1
 
             scaled = cv2.resize(crop_boundary, (0, 0), fx=scale, fy=scale)
 
