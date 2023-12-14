@@ -22,7 +22,7 @@ from src.doms_databasen.constants import (
     BOX_LENGTH_LOWER_BOUND,
     DPI,
     TOLERANCE_FLOOD_FILL,
-    USUAL_BOX_HEIGHT,
+    BOX_HEIGHT_LOWER_BOUND,
 )
 
 logger = getLogger(__name__)
@@ -758,41 +758,12 @@ class PDFTextReader:
         )
         inverted = cv2.bitwise_not(binary)
 
-        blobs = self._get_blobs(inverted)
+        # Some boxes are overlapping (horizontally).
+        # Split them into separate boxes.
+        inverted_boxes_split = self._split_boxes_in_image(inverted=inverted.copy())
 
-        # First split multiple boxes into separate boxes
-        for blob in blobs:
-            if blob.area_bbox < self.config.box_area_min:
-                break
-            row_min, col_min, row_max, col_max = blob.bbox
-
-            box_height = row_max - row_min
-            if box_height > 2 * USUAL_BOX_HEIGHT:
-                # Split into multiple boxes (horizontal split)
-
-                # Count how many boxes that supposedly are
-                # stacked on top of each other.
-                n_boxes_in_stack = box_height // USUAL_BOX_HEIGHT
-                box_height_ = box_height // n_boxes_in_stack
-                for j in range(n_boxes_in_stack):
-                    row_min_ = row_min + box_height_ * j
-                    row_max_ = row_min + box_height_ * (j + 1)
-                    sub_image = inverted[row_min_ : row_max_ + 1, col_min : col_max + 1]
-
-                    # Opening - remove "bridges" between boxes
-                    eroded = cv2.erode(sub_image, np.ones((10, 1)), iterations=1)
-                    dilated = cv2.dilate(eroded, np.ones((10, 1)), iterations=1)
-
-                    # Make a line to separate boxes (except for last box).
-                    if j != n_boxes_in_stack - 1:
-                        dilated[-self.config.split_boxes_line_idx_shift, :] = 0
-
-                    # Overwrite original sub image with modified sub image
-                    inverted[row_min_ : row_max_ + 1, col_min : col_max + 1] = dilated
-
-        # Detects blobs again. Now there should be no overlapping boxes
         # (`inverted` is an inverted binary image).
-        blobs = self._get_blobs(binary=inverted)
+        blobs = self._get_blobs(binary=inverted_boxes_split)
 
         anonymized_boxes = []
         heights = []
@@ -829,6 +800,54 @@ class PDFTextReader:
                 pass
 
         return anonymized_boxes
+
+    def _split_boxes_in_image(self, inverted: np.ndarray) -> np.ndarray:
+        """Splits overlapping boxes in image
+        
+        Some boxes are overlapping horizontally.
+        This function splits them into separate boxes.
+
+        Args:
+            inverted (np.ndarray):
+                Inverted binary image used to find the blobs/boxes.
+        
+        
+        Returns:
+            np.ndarray:
+                Inverted binary image with overlapping boxes split into separate boxes.
+        """
+        blobs = self._get_blobs(inverted)
+
+        # First split multiple boxes into separate boxes
+        for blob in blobs:
+            if blob.area_bbox < self.config.box_area_min:
+                break
+            row_min, col_min, row_max, col_max = blob.bbox
+
+            box_height = row_max - row_min
+            if box_height > 2 * BOX_HEIGHT_LOWER_BOUND:
+                # Split into multiple boxes (horizontal split)
+
+                # Count how many boxes that supposedly are
+                # stacked on top of each other.
+                n_boxes_in_stack = box_height // BOX_HEIGHT_LOWER_BOUND
+                box_height_ = box_height // n_boxes_in_stack
+                for j in range(n_boxes_in_stack):
+                    row_min_ = row_min + box_height_ * j
+                    row_max_ = row_min + box_height_ * (j + 1)
+                    sub_image = inverted[row_min_ : row_max_ + 1, col_min : col_max + 1]
+
+                    # Opening - remove "bridges" between boxes
+                    eroded = cv2.erode(sub_image, np.ones((10, 1)), iterations=1)
+                    dilated = cv2.dilate(eroded, np.ones((10, 1)), iterations=1)
+
+                    # Make a line to separate boxes (except for last box).
+                    if j != n_boxes_in_stack - 1:
+                        dilated[-self.config.split_boxes_line_idx_shift, :] = 0
+
+                    # Overwrite original sub image with modified sub image
+                    inverted[row_min_ : row_max_ + 1, col_min : col_max + 1] = dilated
+        return inverted
 
     def _has_neighboring_white_pixels(self, a: np.ndarray, b: np.ndarray) -> bool:
         """Checks if two arrays have neighboring white pixels.
@@ -1455,6 +1474,13 @@ def draw_box(image, box):
 
     Used for debugging.
     """
-    row_min, col_min, row_max, col_max = box["coordinates"]
-    image[row_min : row_max + 1, col_min : col_max + 1, :] = 0
+    if isinstance(box, dict):
+        row_min, col_min, row_max, col_max = box["coordinates"]
+    else:
+        # blob
+        row_min, col_min, row_max, col_max = box.bbox
+    if len(image.shape) == 2:
+        image[row_min : row_max + 1, col_min : col_max + 1] = 0
+    else:
+        image[row_min : row_max + 1, col_min : col_max + 1, :] = 0
     save_cv2_image_tmp(image)
