@@ -1,7 +1,7 @@
 """Code to read text from PDFs obtained from domsdatabasen.dk"""
 
 from logging import getLogger
-from typing import List, Tuple
+from typing import List
 
 import cv2
 import easyocr
@@ -19,10 +19,10 @@ from skimage.measure._regionprops import RegionProperties
 from tika import parser
 
 from src.doms_databasen.constants import (
+    BOX_HEIGHT_LOWER_BOUND,
     BOX_LENGTH_SCALE_THRESHOLD,
     DPI,
     TOLERANCE_FLOOD_FILL,
-    BOX_HEIGHT_LOWER_BOUND,
 )
 
 logger = getLogger(__name__)
@@ -46,8 +46,10 @@ class PDFTextReader:
         self.config = config
         self.reader = easyocr.Reader(["da"], gpu=config.gpu)
 
-    def extract_text_easyocr(self, pdf_path: str) -> str:
-        """Extracts text from a PDF using easyocr.
+    def extract_text(self, pdf_path: str) -> str:
+        """Extracts text from a PDF using easyocr or tika.
+
+        Tika is only used if there are no indications of anonymization.
 
         Some text is anonymized with boxes, and some text is anonymized with underlines.
         This function tries to find these anonymization, read the anonymized text,
@@ -57,6 +59,10 @@ class PDFTextReader:
         Args:
             pdf_path (str):
                 Path to PDF.
+
+        Returns:
+            pdf_text (str):
+                Text from PDF.
         """
 
         if self.config.image_idx:
@@ -449,26 +455,45 @@ class PDFTextReader:
         # We want to remove them entirely. We do this using flood fill.
         filled = inverted.copy()
 
+        filled[filled < 5] = 0
+        opened = cv2.morphologyEx(filled, cv2.MORPH_OPEN, np.ones((30, 1)))
+        save_cv2_image_tmp(opened)
+
+        # filled[filled < 5] = 0
+        # save_cv2_image_tmp
+        # binary = self._binarize(image=inverted.copy(), threshold=5)
+        # save_cv2_image_tmp(binary)
+
         # In flood fill a tolerance of 254 is used.
         # This means that when initiating a flood fill operation at a seed point
         # with a value of 255, all pixels greater than 0 within the object of the seed point
         # will be altered to 0.
+
         for anonymized_box in anonymized_boxes:
             row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
-            seed_point = (row_min, col_min)
+            center = (row_min + row_max) // 2, (col_min + col_max) // 2
+            seed_point = center
 
-            if filled[seed_point] == 0:
+            if opened[seed_point] != 255:
                 # Box is already removed, supposedly because
                 # it overlaps with a previous box.
+                print("aloha")
                 continue
 
-            filled = skimage.segmentation.flood_fill(
-                image=filled,
+            mask = skimage.segmentation.flood(
+                image=opened,
                 seed_point=seed_point,
-                new_value=0,
-                connectivity=1,
                 tolerance=TOLERANCE_FLOOD_FILL,
             )
+            filled[mask] = 0
+
+            # filled = skimage.segmentation.flood_fill(
+            #     image=filled,
+            #     seed_point=seed_point,
+            #     new_value=0,
+            #     connectivity=1,
+            #     tolerance=TOLERANCE_FLOOD_FILL,
+            # )
 
         pad = self.config.underline_remove_pad
         for underline in underlines:
@@ -689,7 +714,11 @@ class PDFTextReader:
             # If length of box is short, then there are probably only a few letters in the box.
             # In this case, scale the image up.
             box_length = col_max - col_min
-            scale = 1 if box_length > BOX_LENGTH_SCALE_THRESHOLD else BOX_LENGTH_SCALE_THRESHOLD / box_length + 1
+            scale = (
+                1
+                if box_length > BOX_LENGTH_SCALE_THRESHOLD
+                else BOX_LENGTH_SCALE_THRESHOLD / box_length + 1
+            )
 
             scaled = cv2.resize(crop_boundary, (0, 0), fx=scale, fy=scale)
 
@@ -800,15 +829,15 @@ class PDFTextReader:
 
     def _split_boxes_in_image(self, inverted: np.ndarray) -> np.ndarray:
         """Splits overlapping boxes in image
-        
+
         Some boxes are overlapping horizontally.
         This function splits them into separate boxes.
 
         Args:
             inverted (np.ndarray):
                 Inverted binary image used to find the blobs/boxes.
-        
-        
+
+
         Returns:
             np.ndarray:
                 Inverted binary image with overlapping boxes split into separate boxes.
@@ -823,28 +852,66 @@ class PDFTextReader:
 
             box_height = row_max - row_min
             if box_height > 2 * BOX_HEIGHT_LOWER_BOUND:
-                # Split into multiple boxes (horizontal split)
 
-                # Count how many boxes that supposedly are
-                # stacked on top of each other.
-                n_boxes_in_stack = box_height // BOX_HEIGHT_LOWER_BOUND
-                box_height_ = box_height // n_boxes_in_stack
-                for j in range(n_boxes_in_stack):
-                    row_min_ = row_min + box_height_ * j
-                    row_max_ = row_min + box_height_ * (j + 1)
-                    sub_image = inverted[row_min_ : row_max_ + 1, col_min : col_max + 1]
+                # Blob to uint8 image
+                blob_image = np.array(blob.image * 255, dtype=np.uint8)
 
-                    # Opening - remove "bridges" between boxes
-                    eroded = cv2.erode(sub_image, np.ones((10, 1)), iterations=1)
-                    dilated = cv2.dilate(eroded, np.ones((10, 1)), iterations=1)
+                # Remove text in box
+                closed = cv2.morphologyEx(blob_image, cv2.MORPH_CLOSE, np.ones((40, 1)))
 
-                    # Make a line to separate boxes (except for last box).
-                    if j != n_boxes_in_stack - 1:
-                        dilated[-self.config.split_boxes_line_idx_shift, :] = 0
+                # Find horizontal edges
+                edges_h = self._get_horizontal_edges(closed=closed)
 
-                    # Overwrite original sub image with modified sub image
-                    inverted[row_min_ : row_max_ + 1, col_min : col_max + 1] = dilated
+                # Get indices of rows to split
+                row_indices_to_split = self._get_row_indices_to_split(edges_h=edges_h)
+
+                # Split
+                for row_idx in row_indices_to_split:
+                    blob_image[row_idx, :] = 0
+
+                # Overwrite original sub image with modified sub image
+                inverted[row_min:row_max, col_min:col_max] = blob_image
+
         return inverted
+
+    def _get_row_indices_to_split(self, edges_h: np.ndarray) -> List[int]:
+        """Get row indices to split from horizontal edges.
+
+        Args:
+            edges_h (np.ndarray):
+                Horizontal edges.
+
+        Returns:
+            List[int]:
+                List of row indices to split.
+        """
+        row_indices_to_split = [0]
+        edge_row_indices = np.where(edges_h > 0)[0]
+        unique, counts = np.unique(edge_row_indices, return_counts=True)
+        for row_idx, count in zip(unique, counts):
+            if (
+                count >= self.config.indices_to_split_count_min
+                and row_idx
+                > row_indices_to_split[-1] + self.config.indices_to_split_row_diff
+            ):
+                row_indices_to_split.append(row_idx)
+        return row_indices_to_split[1:]
+
+    def _get_horizontal_edges(self, closed: np.ndarray) -> np.ndarray:
+        """Get horizontal edges from image.
+
+        Args:
+            closed (np.ndarray):
+                Image to get horizontal edges from.
+
+        Returns:
+            np.ndarray:
+                All horizontal edges.
+        """
+        edges_h = skimage.filters.sobel_h(closed)
+        edges_h = np.abs(edges_h)
+        edges_h = np.array(edges_h * 255, dtype=np.uint8)
+        return edges_h
 
     def _has_neighboring_white_pixels(self, a: np.ndarray, b: np.ndarray) -> bool:
         """Checks if two arrays have neighboring white pixels.
@@ -1461,6 +1528,7 @@ def save_cv2_image_tmp(image):
 
     Used for debugging.
     """
+    image = image.copy()
     if image.max() < 2:
         image = image * 255
     cv2.imwrite("tmp.png", image)
@@ -1471,6 +1539,7 @@ def draw_box(image, box):
 
     Used for debugging.
     """
+    image = image.copy()
     if isinstance(box, dict):
         row_min, col_min, row_max, col_max = box["coordinates"]
     else:

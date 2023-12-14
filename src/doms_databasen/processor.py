@@ -77,7 +77,7 @@ class Processor(PDFTextReader):
         processed_data["tabular_data"] = tabular_data
         processed_data["case_id"] = case_id
         pdf_path = case_dir_raw / self.config.file_names.pdf_document
-        text_anonymized = self.extract_text_easyocr(
+        text_anonymized = self.extract_text(
             pdf_path=pdf_path,
         )
 

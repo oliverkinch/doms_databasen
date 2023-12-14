@@ -41,6 +41,8 @@ box_height_min: 35
 box_accept_ratio: 0.4
 slight_shift_to_bottom: 5
 iou_overlap_threshold: 0.5
+indices_to_split_count_min: 1
+indices_to_split_row_diff: 30
 
 threshold_binarize_anonymized_boxes: 1
 threshold_binarize_refine_anonymized_box: 30
@@ -115,7 +117,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "2419"
+  case_id: "3791"
   all: False
   messages:
     give_correct_input: >
@@ -126,7 +128,7 @@ process:
   test_case_id: "1"
 
 ## Debug
-image_idx: False
+image_idx: False # page number
 
 # Finalize arguments
 finalize:
