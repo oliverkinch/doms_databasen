@@ -55,6 +55,7 @@ invert_find_underline_anonymizations: True
 
 underline_height_lower_bound: 1
 underline_height_upper_bound: 7
+underline_remove_pad: 1
 
 line_start_ignore_col: 1200
 line_start_ignore_row: 3000
@@ -114,7 +115,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "1586"
+  case_id: "2419"
   all: False
   messages:
     give_correct_input: >
@@ -123,6 +124,9 @@ process:
     done: >
       Processing done!
   test_case_id: "1"
+
+## Debug
+image_idx: False
 
 # Finalize arguments
 finalize:
