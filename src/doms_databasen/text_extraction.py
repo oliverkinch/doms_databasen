@@ -61,7 +61,15 @@ class PDFTextReader:
 
         if self.config.image_idx:
             # Used to test on a single page
-            images = map(np.array, convert_from_path(pdf_path, dpi=DPI, first_page=self.config.image_idx, last_page=self.config.image_idx))
+            images = map(
+                np.array,
+                convert_from_path(
+                    pdf_path,
+                    dpi=DPI,
+                    first_page=self.config.image_idx,
+                    last_page=self.config.image_idx,
+                ),
+            )
         else:
             images = map(np.array, convert_from_path(pdf_path, dpi=DPI))
         pdf_text = ""
@@ -470,7 +478,9 @@ class PDFTextReader:
             row_min, col_min, row_max, col_max = underline
             seed_point = (row_min, col_min)
             # Remove underline
-            filled[row_min - pad : row_max + 1 + pad, col_min - pad : col_max + 1 + pad] = 0
+            filled[
+                row_min - pad : row_max + 1 + pad, col_min - pad : col_max + 1 + pad
+            ] = 0
 
         # Increase size of letters slightly
         dilated = cv2.dilate(filled, np.ones((2, 2)))
