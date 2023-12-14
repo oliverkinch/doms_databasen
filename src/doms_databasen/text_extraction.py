@@ -175,10 +175,7 @@ class PDFTextReader:
             # Merge all boxes
             all_boxes = boxes + all_anonymized_boxes_with_text
             page_text = self._get_text_from_boxes(boxes=all_boxes)
-            if i == 0:
-                pdf_text += f"{page_text}\n\n"
-            else:
-                pdf_text += f"\n\n{page_text}\n\n"
+            pdf_text += f"{page_text}\n\n"
 
         return pdf_text.strip()
 
@@ -689,7 +686,7 @@ class PDFTextReader:
             crop = gray[row_min : row_max + 1, col_min : col_max + 1]
             crop_boundary = self._add_boundary(crop)
 
-            # If length of box is short, then there are probably < 2 letters in the box.
+            # If length of box is short, then there are probably only a few letters in the box.
             # In this case, scale the image up.
             box_length = col_max - col_min
             scale = 1 if box_length > BOX_LENGTH_LOWER_BOUND else 2
