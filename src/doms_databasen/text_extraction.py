@@ -464,24 +464,12 @@ class PDFTextReader:
                 tolerance=TOLERANCE_FLOOD_FILL,
             )
 
+        pad = self.config.underline_remove_pad
         for underline in underlines:
             row_min, col_min, row_max, col_max = underline
             seed_point = (row_min, col_min)
+            filled[row_min - pad : row_max + 1 + pad, col_min - pad : col_max + 1 + pad] = 0
 
-            if filled[seed_point] == 0:
-                # Underline is already removed, supposedly because
-                # it overlaps with a previous box.
-                # I have not seen this happen for underlines,
-                # but I suppose it could happen, similar to the boxes.
-                continue
-
-            filled = skimage.segmentation.flood_fill(
-                image=filled,
-                seed_point=seed_point,
-                new_value=0,
-                connectivity=1,
-                tolerance=TOLERANCE_FLOOD_FILL,
-            )
 
         # Increase size of letters slightly
         dilated = cv2.dilate(filled, np.ones((2, 2)))
