@@ -857,7 +857,9 @@ class PDFTextReader:
                 blob_image = np.array(blob.image * 255, dtype=np.uint8)
 
                 # Get indices of rows to split
-                row_indices_to_split = self._get_row_indices_to_split(blob_image=blob_image)
+                row_indices_to_split = self._get_row_indices_to_split(
+                    blob_image=blob_image
+                )
 
                 # Split
                 for row_idx in row_indices_to_split:

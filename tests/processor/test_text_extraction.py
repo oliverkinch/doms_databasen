@@ -242,10 +242,12 @@ def test_no_boxes_with_too_much_overlap(
     "image_path, n_boxes_after_split_expected",
     [
         ("tests/data/processor/overlapping_boxes_1.png", 2),
-        ("tests/data/processor/overlapping_boxes_2.png", 4)
+        ("tests/data/processor/overlapping_boxes_2.png", 4),
     ],
 )
-def test_get_row_indices_to_split(pdf_text_reader, image_path, n_boxes_after_split_expected):
+def test_get_row_indices_to_split(
+    pdf_text_reader, image_path, n_boxes_after_split_expected
+):
     image = np.array(Image.open(image_path))
     split_indices = pdf_text_reader._get_row_indices_to_split(blob_image=image)
     n_boxes = len(split_indices) + 1
