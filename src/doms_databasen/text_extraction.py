@@ -58,7 +58,12 @@ class PDFTextReader:
             pdf_path (str):
                 Path to PDF.
         """
-        images = map(np.array, convert_from_path(pdf_path, dpi=DPI))
+
+        if self.config.image_idx:
+            # Used to test on a single page
+            images = map(np.array, convert_from_path(pdf_path, dpi=DPI, first_page=self.config.image_idx, last_page=self.config.image_idx))
+        else:
+            images = map(np.array, convert_from_path(pdf_path, dpi=DPI))
         pdf_text = ""
 
         # I have not seen a single PDF that uses both methods.
@@ -72,6 +77,7 @@ class PDFTextReader:
         box_anonymization = True
 
         for i, image in enumerate(images):
+            i = self.config.image_idx or i
             # Log info about which anonymization methods are used in the PDF.
             if i == 1:
                 if not box_anonymization:
@@ -102,10 +108,6 @@ class PDFTextReader:
                     underlines,
                 ) = self._line_anonymization_to_boxes(
                     image=image.copy(),
-                    bounds=(
-                        self.config.underline_height_lower_bound,
-                        self.config.underline_height_upper_bound,
-                    ),
                 )
                 anonymized_boxes_from_underlines_with_text = [
                     self._get_text_from_anonymized_box(
@@ -193,16 +195,12 @@ class PDFTextReader:
         blobs = sorted(blobs, key=lambda blob: blob.area_bbox, reverse=True)
         return blobs
 
-    def _line_anonymization_to_boxes(
-        self, image: np.ndarray, bounds: Tuple[int] = (1, 7)
-    ) -> tuple:
+    def _line_anonymization_to_boxes(self, image: np.ndarray) -> tuple:
         """Finds all underlines and makes anonymized boxes above them.
 
         Args:
             image (np.ndarray):
                 Image to find anonymized boxes in.
-            bounds (Tuple[int]):
-                Bounds for height of underline.
 
         Returns:
             anonymized_boxes (List[dict]):
@@ -212,7 +210,11 @@ class PDFTextReader:
                 List of underlines with coordinates
                 (will later be used to remove the underlines from the image).
         """
-        lb, ub = bounds
+        # Bounds for height of underline.
+        lb, ub = (
+            self.config.underline_height_lower_bound,
+            self.config.underline_height_upper_bound,
+        )
 
         # Use this one when refining boxes
         image_inverted = cv2.bitwise_not(image)
@@ -398,9 +400,8 @@ class PDFTextReader:
         """
         return abs(y - y_prev) < self.config.max_y_difference
 
-    @staticmethod
     def _process_image(
-        image: np.ndarray, anonymized_boxes: List[dict], underlines: List[tuple]
+        self, image: np.ndarray, anonymized_boxes: List[dict], underlines: List[tuple]
     ) -> np.ndarray:
         """Prepare image for easyocr to read the main text (all non-anonymized text).
 
