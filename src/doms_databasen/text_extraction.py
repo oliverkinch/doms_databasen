@@ -468,8 +468,8 @@ class PDFTextReader:
         for underline in underlines:
             row_min, col_min, row_max, col_max = underline
             seed_point = (row_min, col_min)
+            # Remove underline
             filled[row_min - pad : row_max + 1 + pad, col_min - pad : col_max + 1 + pad] = 0
-
 
         # Increase size of letters slightly
         dilated = cv2.dilate(filled, np.ones((2, 2)))
