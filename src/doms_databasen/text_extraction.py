@@ -19,7 +19,7 @@ from skimage.measure._regionprops import RegionProperties
 from tika import parser
 
 from src.doms_databasen.constants import (
-    BOX_LENGTH_LOWER_BOUND,
+    BOX_LENGTH_SCALE_THRESHOLD,
     DPI,
     TOLERANCE_FLOOD_FILL,
     BOX_HEIGHT_LOWER_BOUND,
@@ -689,7 +689,7 @@ class PDFTextReader:
             # If length of box is short, then there are probably only a few letters in the box.
             # In this case, scale the image up.
             box_length = col_max - col_min
-            scale = 1 if box_length > BOX_LENGTH_LOWER_BOUND else 2
+            scale = 1 if box_length > BOX_LENGTH_SCALE_THRESHOLD else 2
 
             scaled = cv2.resize(crop_boundary, (0, 0), fx=scale, fy=scale)
 
