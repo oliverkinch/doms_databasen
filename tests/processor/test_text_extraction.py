@@ -208,35 +208,49 @@ def test_no_boxes_with_too_much_overlap(
     assert len(underlines) - len(boxes) == n_duplicates_expected
 
 
+# @pytest.mark.parametrize(
+#     "image_path, n_boxes_before_split_expected, n_boxes_after_split_expected",
+#     [
+#         ("tests/data/processor/overlapping_boxes_horizontally.png", 6, 7),
+#     ],
+# )
+# def test_split_boxes_in_image(
+#     config,
+#     pdf_text_reader,
+#     image_path,
+#     n_boxes_before_split_expected,
+#     n_boxes_after_split_expected,
+# ):
+#     def _get_boxes_from(image):
+#         return [
+#             blob
+#             for blob in pdf_text_reader._get_blobs(image)
+#             if blob.area_bbox > config.box_area_min
+#         ]
+
+#     image = np.array(Image.open(image_path))
+
+#     n_boxes_before_split = len(_get_boxes_from(image=image))
+#     assert n_boxes_before_split == n_boxes_before_split_expected
+
+#     image_boxes_split = pdf_text_reader._split_boxes_in_image(inverted=image)
+#     n_boxes_after_split = len(_get_boxes_from(image=image_boxes_split))
+#     assert n_boxes_after_split == n_boxes_after_split_expected
+
+
 @pytest.mark.parametrize(
-    "image_path, n_boxes_before_split_expected, n_boxes_after_split_expected",
+    "image_path, n_boxes_after_split_expected",
     [
-        ("tests/data/processor/overlapping_boxes_horizontally.png", 6, 7),
+        ("tests/data/processor/overlapping_boxes_1.png", 2),
+        ("tests/data/processor/overlapping_boxes_2.png", 4)
     ],
 )
-def test_split_boxes_in_image(
-    config,
-    pdf_text_reader,
-    image_path,
-    n_boxes_before_split_expected,
-    n_boxes_after_split_expected,
-):
-    def _get_boxes_from(image):
-        return [
-            blob
-            for blob in pdf_text_reader._get_blobs(image)
-            if blob.area_bbox > config.box_area_min
-        ]
-
+def test_get_row_indices_to_split(pdf_text_reader, image_path, n_boxes_after_split_expected):
     image = np.array(Image.open(image_path))
-
-    n_boxes_before_split = len(_get_boxes_from(image=image))
-    assert n_boxes_before_split == n_boxes_before_split_expected
-
-    image_boxes_split = pdf_text_reader._split_boxes_in_image(inverted=image)
-    n_boxes_after_split = len(_get_boxes_from(image=image_boxes_split))
-    assert n_boxes_after_split == n_boxes_after_split_expected
+    split_indices = pdf_text_reader._get_row_indices_to_split(blob_image=image)
+    n_boxes = len(split_indices) + 1
+    assert n_boxes == n_boxes_after_split_expected
 
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_extract_text"])
+    pytest.main([__file__ + "::test_get_row_indices_to_split"])

@@ -856,14 +856,8 @@ class PDFTextReader:
                 # Blob to uint8 image
                 blob_image = np.array(blob.image * 255, dtype=np.uint8)
 
-                # Remove text in box
-                closed = cv2.morphologyEx(blob_image, cv2.MORPH_CLOSE, np.ones((40, 1)))
-
-                # Find horizontal edges
-                edges_h = self._get_horizontal_edges(closed=closed)
-
                 # Get indices of rows to split
-                row_indices_to_split = self._get_row_indices_to_split(edges_h=edges_h)
+                row_indices_to_split = self._get_row_indices_to_split(blob_image=blob_image)
 
                 # Split
                 for row_idx in row_indices_to_split:
@@ -874,17 +868,23 @@ class PDFTextReader:
 
         return inverted
 
-    def _get_row_indices_to_split(self, edges_h: np.ndarray) -> List[int]:
-        """Get row indices to split from horizontal edges.
+    def _get_row_indices_to_split(self, blob_image: np.ndarray) -> List[int]:
+        """Split blob of overlapping boxes into separate boxes.
+
+        Split blob where horizontal edges are found.
 
         Args:
-            edges_h (np.ndarray):
-                Horizontal edges.
+            blob_image (np.ndarray):
+                uint8 image of the found blobs.
 
         Returns:
             List[int]:
                 List of row indices to split.
         """
+        closed = cv2.morphologyEx(blob_image, cv2.MORPH_CLOSE, np.ones((40, 1)))
+
+        edges_h = self._get_horizontal_edges(closed=closed)
+
         row_indices_to_split = [0]
         edge_row_indices = np.where(edges_h > 0)[0]
         unique, counts = np.unique(edge_row_indices, return_counts=True)
