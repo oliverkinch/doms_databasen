@@ -395,13 +395,16 @@ class PDFTextReader:
         logo = image[:r, c:, :]
         logo_binary = self._process_logo(logo=logo)
 
-        blob_largest = self._get_blobs(binary=logo_binary)[0]
-        # If largest blob is too large, then we are probably dealing with a logo.
-        if blob_largest.area_bbox > self.config.logo_bbox_area_threshold:
-            row_min, col_min, row_max, col_max = blob_largest.bbox
-            logo[row_min: row_max, col_min: col_max, :] = 255
+        blobs = self._get_blobs(binary=logo_binary)
+        if blobs:
+            blob_largest = blobs[0]
+            # If largest blob is too large, then we are probably dealing with a logo.
+            if blob_largest.area_bbox > self.config.logo_bbox_area_threshold:
+                # Remove logo
+                row_min, col_min, row_max, col_max = blob_largest.bbox
+                logo[row_min: row_max, col_min: col_max, :] = 255
+                image[:r, c:, :] = logo
 
-        image[:r, c:, :] = logo
         return image
     
     def _process_logo(self, logo: np.ndarray) -> np.ndarray:
