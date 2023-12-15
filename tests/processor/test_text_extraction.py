@@ -207,6 +207,7 @@ def test_no_boxes_with_too_much_overlap(
 
     assert len(underlines) - len(boxes) == n_duplicates_expected
 
+
 @pytest.mark.parametrize(
     "image_path, n_boxes_after_split_expected",
     [
@@ -221,6 +222,7 @@ def test_get_row_indices_to_split(
     split_indices = pdf_text_reader._get_row_indices_to_split(blob_image=image)
     n_boxes = len(split_indices) + 1
     assert n_boxes == n_boxes_after_split_expected
+
 
 @pytest.mark.parametrize(
     "image_path, difference_flag_expected",

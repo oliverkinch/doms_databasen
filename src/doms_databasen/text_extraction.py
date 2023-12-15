@@ -402,14 +402,14 @@ class PDFTextReader:
             if blob_largest.area_bbox > self.config.logo_bbox_area_threshold:
                 # Remove logo
                 row_min, col_min, row_max, col_max = blob_largest.bbox
-                logo[row_min: row_max, col_min: col_max, :] = 255
+                logo[row_min:row_max, col_min:col_max, :] = 255
                 image[:r, c:, :] = logo
 
         return image
-    
+
     def _process_logo(self, logo: np.ndarray) -> np.ndarray:
         """Processes logo for blob detection.
-        
+
         Args:
             logo (np.ndarray):
                 Sub image which might contain a logo.
@@ -488,18 +488,11 @@ class PDFTextReader:
 
         filled[filled < 5] = 0
         opened = cv2.morphologyEx(filled, cv2.MORPH_OPEN, np.ones((30, 1)))
-        save_cv2_image_tmp(opened)
-
-        # filled[filled < 5] = 0
-        # save_cv2_image_tmp
-        # binary = self._binarize(image=inverted.copy(), threshold=5)
-        # save_cv2_image_tmp(binary)
 
         # In flood fill a tolerance of 254 is used.
         # This means that when initiating a flood fill operation at a seed point
         # with a value of 255, all pixels greater than 0 within the object of the seed point
         # will be altered to 0.
-
         for anonymized_box in anonymized_boxes:
             row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
             center = (row_min + row_max) // 2, (col_min + col_max) // 2
@@ -516,14 +509,6 @@ class PDFTextReader:
                 tolerance=TOLERANCE_FLOOD_FILL,
             )
             filled[mask] = 0
-
-            # filled = skimage.segmentation.flood_fill(
-            #     image=filled,
-            #     seed_point=seed_point,
-            #     new_value=0,
-            #     connectivity=1,
-            #     tolerance=TOLERANCE_FLOOD_FILL,
-            # )
 
         pad = self.config.underline_remove_pad
         for underline in underlines:
