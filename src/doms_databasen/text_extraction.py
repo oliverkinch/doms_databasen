@@ -380,7 +380,7 @@ class PDFTextReader:
     def _remove_logo(self, image: np.ndarray) -> np.ndarray:
         """Removes logo from image.
 
-        For most PDFs, the logo is in the top right corner of the first page
+        For many PDFs, there is a logo in the top right corner of the first page.
 
         Args:
             image (np.ndarray):
@@ -390,9 +390,37 @@ class PDFTextReader:
             np.ndarray:
                 Image with logo removed.
         """
+        
         r, c = self.config.logo_row_idx, self.config.logo_col_idx
-        image[:r, c:, :] = 255
+        logo = image[:r, c:, :]
+        logo_binary = self._process_logo(logo=logo)
+
+        blob_largest = self._get_blobs(binary=logo_binary)[0]
+        # If largest blob is too large, then we are probably dealing with a logo.
+        if blob_largest.area_bbox > self.config.logo_circumference_threshold:
+            row_min, col_min, row_max, col_max = blob_largest.bbox
+            logo[row_min: row_max, col_min: col_max, :] = 255
+
+        image[:r, c:, :] = logo
         return image
+    
+    def _process_logo(self, logo: np.ndarray) -> np.ndarray:
+        """Processes logo for blob detection.
+        
+        Args:
+            logo (np.ndarray):
+                Sub image which might contain a logo.
+
+        Returns:
+            np.ndarray:
+                Processed logo.
+        """
+        logo_gray = cv2.cvtColor(logo, cv2.COLOR_BGR2GRAY)
+        logo_binary = self._binarize(
+            image=logo_gray, threshold=230, val_min=0, val_max=255
+        )
+        inverted = cv2.bitwise_not(logo_binary)
+        return inverted
 
     def _on_same_line(self, y: int, y_prev: int) -> bool:
         """Determine if two bounding boxes are on the same line.
@@ -477,7 +505,6 @@ class PDFTextReader:
             if opened[seed_point] != 255:
                 # Box is already removed, supposedly because
                 # it overlaps with a previous box.
-                print("aloha")
                 continue
 
             mask = skimage.segmentation.flood(

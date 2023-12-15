@@ -99,6 +99,7 @@ testing: False
 ### Remove logo on first page
 logo_row_idx: 350
 logo_col_idx: 1790
+logo_circumference_threshold: 50000
 
 # Scrape arguments
 scrape:
