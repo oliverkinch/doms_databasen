@@ -98,8 +98,7 @@ message_processing_all_cases: >
 testing: False
 
 ### Remove logo on first page
-logo_row_idx: 350
-logo_col_idx: 1790
+page_from_top_to_this_row: 500
 logo_bbox_area_threshold: 50000
 
 # Scrape arguments
@@ -119,7 +118,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "3396"
+  case_id: "2504"
   all: False
   messages:
     give_correct_input: >

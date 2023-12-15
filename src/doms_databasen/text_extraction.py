@@ -391,36 +391,36 @@ class PDFTextReader:
             np.ndarray:
                 Image with logo removed.
         """
-        r, c = self.config.logo_row_idx, self.config.logo_col_idx
-        logo = image[:r, c:, :]
-        logo_binary = self._process_logo(logo=logo)
+        r = self.config.page_from_top_to_this_row
+        page_top = image[:r, ...]
+        page_top_binary = self._process_top_page(page_top=page_top)
 
-        blobs = self._get_blobs(binary=logo_binary)
+        blobs = self._get_blobs(binary=page_top_binary)
         if blobs:
             blob_largest = blobs[0]
             # If largest blob is too large, then we are probably dealing with a logo.
             if blob_largest.area_bbox > self.config.logo_bbox_area_threshold:
                 # Remove logo
                 row_min, col_min, row_max, col_max = blob_largest.bbox
-                logo[row_min:row_max, col_min:col_max, :] = 255
-                image[:r, c:, :] = logo
+                page_top[row_min:row_max, col_min:col_max, :] = 255
+                image[:r, ...] = page_top
 
         return image
 
-    def _process_logo(self, logo: np.ndarray) -> np.ndarray:
+    def _process_top_page(self, page_top: np.ndarray) -> np.ndarray:
         """Processes logo for blob detection.
 
         Args:
-            logo (np.ndarray):
-                Sub image which might contain a logo.
+            page_top (np.ndarray):
+                Top part of page.
 
         Returns:
             np.ndarray:
-                Processed logo.
+                Processed top part.
         """
-        logo_gray = cv2.cvtColor(logo, cv2.COLOR_BGR2GRAY)
+        page_top_gray = cv2.cvtColor(page_top, cv2.COLOR_BGR2GRAY)
         logo_binary = self._binarize(
-            image=logo_gray, threshold=230, val_min=0, val_max=255
+            image=page_top_gray, threshold=230, val_min=0, val_max=255
         )
         inverted = cv2.bitwise_not(logo_binary)
         return inverted
