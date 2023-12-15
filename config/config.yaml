@@ -97,8 +97,8 @@ message_processing_all_cases: >
 testing: False
 
 ### Remove logo on first page
-logo_row_idx: 500
-logo_col_idx: 1500
+logo_row_idx: 350
+logo_col_idx: 1790
 
 # Scrape arguments
 scrape:
