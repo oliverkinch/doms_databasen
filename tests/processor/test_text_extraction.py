@@ -114,6 +114,12 @@ def test_get_text_from_boxes(pdf_text_reader, boxes, text_expected):
             False,
             "<anonym>Ø</anonym>",
         ),
+        (
+            "tests/data/processor/get_text_from_box_2.png",
+            {'coordinates': [1169, 274, 1213, 359]},
+            True,
+            "<anonym>By 1</anonym>",
+        )
     ],
 )
 def test_read_text_from_anonymized_box(
@@ -239,4 +245,4 @@ def test_remove_logo(pdf_text_reader, image_path, difference_flag_expected):
 
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_remove_logo"])
+    pytest.main([__file__ + "::test_read_text_from_anonymized_box"])

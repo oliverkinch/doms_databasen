@@ -1,7 +1,7 @@
 """Code to read text from PDFs obtained from domsdatabasen.dk"""
 
 from logging import getLogger
-from typing import List
+from typing import List, Tuple
 
 import cv2
 import easyocr
@@ -722,20 +722,19 @@ class PDFTextReader:
         # E.g. the first box will contain the first word of `anonymized_box`.
         for anonymized_box_ in anonymized_boxes:
             row_min, col_min, row_max, col_max = anonymized_box_["coordinates"]
-
             crop = gray[row_min : row_max + 1, col_min : col_max + 1]
-            crop_boundary = self._add_boundary(crop)
+            crop_refined, box_length = self._refine_crop(crop)
 
             # If length of box is short, then there are probably only a few letters in the box.
             # In this case, scale the image up.
-            box_length = col_max - col_min
             scale = (
                 1
                 if box_length > BOX_LENGTH_SCALE_THRESHOLD
                 else BOX_LENGTH_SCALE_THRESHOLD / box_length + 1
             )
+            scale = min(scale, self.config.max_scale)
 
-            scaled = cv2.resize(crop_boundary, (0, 0), fx=scale, fy=scale)
+            scaled = cv2.resize(crop_refined, (0, 0), fx=scale, fy=scale)
 
             # Increase size of letters
             dilated = cv2.dilate(scaled, np.ones((2, 2)))
@@ -772,6 +771,29 @@ class PDFTextReader:
 
         anonymized_box["text"] = f"<anonym>{text_all}</anonym>" if text_all else ""
         return anonymized_box
+
+    def _refine_crop(self, crop: np.ndarray) -> Tuple[np.ndarray, float]:
+        """Refine crop.
+        
+        Mostly relevant for boxes that have been split into multiple boxes.
+
+        Args:
+            crop (np.ndarray):
+                Crop of image representing a box.
+
+        Returns:
+            np.ndarray:
+                Refined crop.
+            float:
+                Length of box
+        """
+        rows, cols = np.where(crop > 0)
+        col_first, col_last = cols.min(), cols.max()
+        row_first, row_last = rows.min(), rows.max()
+        crop_fitted = crop[row_first : row_last + 1, col_first : col_last + 1]
+        crop_boundary = self._add_boundary(crop_fitted, padding=3)
+        box_length = col_last - col_first
+        return crop_boundary, box_length
 
     def _find_anonymized_boxes(self, image: np.ndarray) -> List[dict]:
         """Finds anonymized boxes in image.
@@ -1443,7 +1465,7 @@ class PDFTextReader:
         return split_indices
 
     @staticmethod
-    def _add_boundary(image: np.ndarray) -> np.ndarray:
+    def _add_boundary(image: np.ndarray, padding: int=1) -> np.ndarray:
         """Add boundary to image.
 
         EasyOCR seems to give the best results when the text is surrounded by black pixels.
@@ -1456,8 +1478,10 @@ class PDFTextReader:
             np.ndarray:
                 Image with boundary.
         """
-        padded = np.zeros((image.shape[0] + 2, image.shape[1] + 2), dtype=np.uint8)
-        padded[1:-1, 1:-1] = image
+        p = padding
+        assert p % 2 == 1, "Padding must be odd."
+        padded = np.zeros((image.shape[0] + p * 2, image.shape[1] + p * 2), dtype=np.uint8)
+        padded[p:-p, p:-p] = image
         return padded
 
     @staticmethod
