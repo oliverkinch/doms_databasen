@@ -91,6 +91,7 @@ class PDFTextReader:
         box_anonymization = True
 
         for i, image in enumerate(images):
+            # For debugging
             i = self.config.image_idx or i
             # Log info about which anonymization methods are used in the PDF.
             if i == 1:
@@ -390,14 +391,13 @@ class PDFTextReader:
             np.ndarray:
                 Image with logo removed.
         """
-        
         r, c = self.config.logo_row_idx, self.config.logo_col_idx
         logo = image[:r, c:, :]
         logo_binary = self._process_logo(logo=logo)
 
         blob_largest = self._get_blobs(binary=logo_binary)[0]
         # If largest blob is too large, then we are probably dealing with a logo.
-        if blob_largest.area_bbox > self.config.logo_circumference_threshold:
+        if blob_largest.area_bbox > self.config.logo_bbox_area_threshold:
             row_min, col_min, row_max, col_max = blob_largest.bbox
             logo[row_min: row_max, col_min: col_max, :] = 255
 

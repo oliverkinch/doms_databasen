@@ -99,7 +99,7 @@ testing: False
 ### Remove logo on first page
 logo_row_idx: 350
 logo_col_idx: 1790
-logo_circumference_threshold: 50000
+logo_bbox_area_threshold: 50000
 
 # Scrape arguments
 scrape:
@@ -118,7 +118,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "3791"
+  case_id: "3396"
   all: False
   messages:
     give_correct_input: >

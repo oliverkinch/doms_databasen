@@ -253,6 +253,19 @@ def test_get_row_indices_to_split(
     n_boxes = len(split_indices) + 1
     assert n_boxes == n_boxes_after_split_expected
 
+@pytest.mark.parametrize(
+    "image_path, difference_flag_expected",
+    [
+        ("tests/data/processor/page_with_logo.png", True),
+        ("tests/data/processor/page_with_no_logo.png", False),
+    ],
+)
+def test_remove_logo(pdf_text_reader, image_path, difference_flag_expected):
+    image = np.array(Image.open(image_path))
+    image_without_logo = pdf_text_reader._remove_logo(image=image.copy())
+    difference_flag = np.abs(image_without_logo - image).sum() > 0
+    assert difference_flag == difference_flag_expected
+
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_get_row_indices_to_split"])
+    pytest.main([__file__ + "::test_remove_logo"])
