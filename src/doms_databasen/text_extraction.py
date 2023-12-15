@@ -381,7 +381,7 @@ class PDFTextReader:
     def _remove_logo(self, image: np.ndarray) -> np.ndarray:
         """Removes logo from image.
 
-        For many PDFs, there is a logo in the top right corner of the first page.
+        For many PDFs, there is a logo in the top of the first page.
 
         Args:
             image (np.ndarray):
