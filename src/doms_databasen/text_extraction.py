@@ -774,7 +774,7 @@ class PDFTextReader:
 
     def _refine_crop(self, crop: np.ndarray) -> Tuple[np.ndarray, float]:
         """Refine crop.
-        
+
         Mostly relevant for boxes that have been split into multiple boxes.
 
         Args:
@@ -1465,7 +1465,7 @@ class PDFTextReader:
         return split_indices
 
     @staticmethod
-    def _add_boundary(image: np.ndarray, padding: int=1) -> np.ndarray:
+    def _add_boundary(image: np.ndarray, padding: int = 1) -> np.ndarray:
         """Add boundary to image.
 
         EasyOCR seems to give the best results when the text is surrounded by black pixels.
@@ -1480,7 +1480,9 @@ class PDFTextReader:
         """
         p = padding
         assert p % 2 == 1, "Padding must be odd."
-        padded = np.zeros((image.shape[0] + p * 2, image.shape[1] + p * 2), dtype=np.uint8)
+        padded = np.zeros(
+            (image.shape[0] + p * 2, image.shape[1] + p * 2), dtype=np.uint8
+        )
         padded[p:-p, p:-p] = image
         return padded
 

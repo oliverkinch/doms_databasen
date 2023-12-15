@@ -116,10 +116,10 @@ def test_get_text_from_boxes(pdf_text_reader, boxes, text_expected):
         ),
         (
             "tests/data/processor/get_text_from_box_2.png",
-            {'coordinates': [1169, 274, 1213, 359]},
+            {"coordinates": [1169, 274, 1213, 359]},
             True,
             "<anonym>By 1</anonym>",
-        )
+        ),
     ],
 )
 def test_read_text_from_anonymized_box(
