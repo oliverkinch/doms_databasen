@@ -101,7 +101,7 @@ class PDFTextReader:
                     logger.info(self.config.message_pdf_has_no_underline_anonymizations)
 
             if i == 0:
-                # Remove logo top right corner
+                # Remove logo
                 image = self._remove_logo(image=image)
 
             if box_anonymization:
