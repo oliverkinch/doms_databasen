@@ -235,6 +235,7 @@ def test_get_row_indices_to_split(
     [
         ("tests/data/processor/page_with_logo.png", True),
         ("tests/data/processor/page_with_no_logo.png", False),
+        ("tests/data/processor/page_with_center_logo.png", True)
     ],
 )
 def test_remove_logo(pdf_text_reader, image_path, difference_flag_expected):
