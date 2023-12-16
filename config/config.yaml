@@ -65,6 +65,10 @@ line_start_ignore_row: 3000
 
 max_expand_steps: 10
 
+remove_cell_border: 5
+cell_box_shrink: 5
+cell_box_crop_padding: 21
+
 message_pdf_has_no_anonymized_boxes: >
   No anonymized boxes detected on first page 1.
   There will therefore not be searched for
@@ -118,7 +122,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "2504"
+  case_id: "3791"
   all: False
   messages:
     give_correct_input: >
@@ -129,7 +133,7 @@ process:
   test_case_id: "1"
 
 ## Debug
-image_idx: False # page number
+image_idx: 2 # page number
 
 # Finalize arguments
 finalize:

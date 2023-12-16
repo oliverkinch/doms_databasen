@@ -10,3 +10,6 @@ scikit-image==0.22.0
 selenium==4.14.0
 tika==2.6.0
 webdriver-manager==4.0.1
+
+
+# img2table[easyocr]

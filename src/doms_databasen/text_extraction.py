@@ -1,5 +1,6 @@
 """Code to read text from PDFs obtained from domsdatabasen.dk"""
 
+import tempfile
 from logging import getLogger
 from typing import List, Tuple
 
@@ -10,6 +11,8 @@ import numpy as np
 import pypdfium2 as pdfium
 import pytesseract
 import skimage
+from img2table.document import Image as TableImage
+from img2table.tables.objects.extraction import BBox
 from omegaconf import DictConfig
 from pdf2image import convert_from_path
 from pypdf import PdfReader
@@ -91,9 +94,31 @@ class PDFTextReader:
         box_anonymization = True
 
         for i, image in enumerate(images):
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             # For debugging
             i = self.config.image_idx or i
             # Log info about which anonymization methods are used in the PDF.
+
+            def identify_table(image):
+                from img2table.document import Image as TableImage
+
+                save_cv2_image_tmp(image)
+                table_image = TableImage(src="tmp.png", detect_rotation=False)
+                extracted_tables = table_image.extract_tables()
+                for table in extracted_tables:
+                    for row in table.content.values():
+                        for cell in row:
+                            cv2.rectangle(
+                                image,
+                                (cell.bbox.x1, cell.bbox.y1),
+                                (cell.bbox.x2, cell.bbox.y2),
+                                (255, 0, 0),
+                                2,
+                            )
+                # Nok bare at lave hver celle om til en boks? Og så fjern tabel, så
+                # main read ikke læser den igen.
+                pass
+
             if i == 1:
                 if not box_anonymization:
                     logger.info(self.config.message_pdf_has_no_anonymized_boxes)
@@ -109,10 +134,10 @@ class PDFTextReader:
                 anonymized_boxes_with_text = [
                     self._read_text_from_anonymized_box(
                         image=image.copy(),
-                        anonymized_box=box,
+                        anonymized_box=anonymized_box,
                         invert=self.config.invert_find_anonymized_boxes,
                     )
-                    for box in anonymized_boxes
+                    for anonymized_box in anonymized_boxes
                 ]
             else:
                 anonymized_boxes_with_text = []
@@ -125,8 +150,8 @@ class PDFTextReader:
                     image=image.copy(),
                 )
                 anonymized_boxes_from_underlines_with_text = [
-                    self._read_text_from_anonymized_box(
-                        image,
+                    self._read_text_from_box(
+                        image.copy(),
                         box,
                         invert=self.config.invert_find_underline_anonymizations,
                     )
@@ -168,10 +193,17 @@ class PDFTextReader:
                 anonymized_boxes_with_text + anonymized_boxes_from_underlines_with_text
             )
 
+            tables = self._find_tables(image=image.copy())
+
             # Remove anonymized boxes from image
-            image_processed = self._process_image(
+            image_processed, cell_boxes = self._process_image(
                 image.copy(), all_anonymized_boxes_with_text, underlines
             )
+
+            # cell_boxes_with_text = [
+            #     self._read_text_from_cell_box(image=image, cell_box=cell_box)
+            #     for cell_box in cell_boxes
+            # ]
 
             # Read core text of image
             result = self.reader.readtext(image_processed)
@@ -185,6 +217,250 @@ class PDFTextReader:
             pdf_text += f"{page_text}\n\n"
 
         return pdf_text.strip()
+    
+    def _find_tables(self, image: np.ndarray):
+        with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
+            inverted = cv2.bitwise_not(image)
+            cv2.imwrite(tmp.name, inverted)
+            table_image = TableImage(src=tmp.name, detect_rotation=False)
+            extracted_tables = table_image.extract_tables()
+
+        for table in extracted_tables:
+            self._read_table(table, image)
+        
+        return extracted_tables
+
+    def _read_table(self, table, image):
+        for row in table.content.values():
+            for cell in row:
+                self._read_text_from_cell(cell, image)
+    
+    def _read_text_from_cell(self, cell, image):
+        inverted = cv2.bitwise_not(image)
+        cell_box = self._cell_to_box(cell)
+        row_min, col_min, row_max, col_max = cell_box["coordinates"]
+
+        crop = inverted[row_min: row_max, col_min: col_max]
+        binary = self._binarize(image=crop, threshold=100)
+        if binary.sum() == 0:
+            cell_box["text"] = ""
+            cell.value = ""
+            return cell_box
+    
+        split_indices = self._multiple_lines(binary=binary)
+        if not split_indices:
+            cell_boxes = [cell_box]
+        else:
+            cell_boxes = self._split_cell_box(cell_box, split_indices)
+
+        all_text = ""
+        for cell_box_ in cell_boxes:
+            row_min, col_min, row_max, col_max = cell_box_["coordinates"]
+            crop = inverted[row_min:row_max, col_min:col_max]
+            crop_refined, _ = self._refine_crop(crop=crop, padding=self.config.cell_box_crop_padding)
+
+
+
+            text = self._get_text_from_result(crop_refined)
+            all_text = self._add_text(text, all_text)
+
+        # Remove last newline
+        all_text = all_text[:-1] if all_text[-1:] == "\n" else all_text
+        cell_box["text"] = all_text
+        cell.value = all_text
+
+    def _get_text_from_result(self, crop_refined):
+        result = self.reader.readtext(crop_refined)
+        if not result:
+            text = ""
+        else:
+            text = result[0][1]
+            for box in result[1:]:
+                box_text = box[1]
+                text_sep = "" if text[-1] == "-" else " "
+                text += f"{text_sep}{box_text}"
+        return f"{text}\n"
+    
+    def _add_text(self, text, all_text):
+        if not all_text:
+            all_text = text
+        else:
+            # text[-1] is `\n`
+            sep = "" if all_text[-2] == "-" else " "
+            all_text += f"{sep}{text}"
+
+        return all_text
+
+    def _split_cell_box(self, cell_box, split_indices):
+        row_min, col_min, row_max, col_max = cell_box["coordinates"]
+        if len(split_indices) == 3:
+            print("aloha")
+
+        cell_boxes = []
+
+        first_box = {
+            "coordinates": (row_min, col_min, row_min + split_indices[0], col_max)
+        }
+        cell_boxes.append(first_box)
+        if len(split_indices) > 1:
+            for split_index_1, split_index_2 in zip(
+                split_indices[:-1], split_indices[1:]
+            ):
+                cell_box_ = {
+                "coordinates": (
+                    row_min + split_index_1 + 1,
+                    col_min,
+                    row_min  + split_index_2,
+                    col_max,
+                )
+                }
+                cell_boxes.append(cell_box_)
+        last_box = {
+            "coordinates": (row_min + split_indices[-1] + 1, col_min, row_max, col_max)
+        }
+        cell_boxes.append(last_box)
+        return cell_boxes
+
+    def _cell_to_box(self, cell):
+        p = self.config.remove_cell_border
+        row_min, col_min, row_max, col_max = (
+            cell.bbox.y1 + p,
+            cell.bbox.x1 + p,
+            cell.bbox.y2 - p,
+            cell.bbox.x2 - p,
+        )
+        cell_box = {
+            "coordinates": (row_min, col_min, row_max, col_max)
+        }
+        return cell_box
+
+    def _multiple_lines(self, binary):
+        rows, _ = np.where(binary > 0)
+        diffs = np.diff(rows)
+        jump_indices = np.where(diffs > 10)[0]
+        split_indices = []
+        for jump_idx in jump_indices:
+            top = rows[jump_idx]
+            bottom = rows[jump_idx + 1]
+            split_index = (top + bottom) // 2
+            split_indices.append(split_index)
+        return split_indices
+    
+
+    def _read_text_from_cell_box(self, image, cell_box):
+        # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        inverted = cv2.bitwise_not(image)
+        binary = self._binarize(image=inverted, threshold=100)
+        row_min, col_min, row_max, col_max = cell_box["coordinates"]
+        crop = binary[row_min:row_max, col_min:col_max]
+
+        if crop[10:- 20, 10:-10].sum() == 0:
+            # Empty box
+            cell_box["text"] = ""
+            return cell_box
+
+        def _multiple_lines(binary):
+            rows, _ = np.where(binary > 0)
+            diffs = np.diff(rows)
+            jump_indices = np.where(diffs > 10)[0]
+            split_indices = []
+            for jump_idx in jump_indices:
+                top = rows[jump_idx]
+                bottom = rows[jump_idx + 1]
+                split_index = (top + bottom) // 2
+                split_indices.append(split_index)
+            return split_indices
+        
+        split_indices = _multiple_lines(crop)
+        if not split_indices:
+            cell_boxes = [cell_box]
+        else:
+            def _split_cell_box(split_indices):
+                cell_boxes = []
+
+                first_box = {
+                    "coordinates": (row_min, col_min, row_min + split_indices[0], col_max)
+                }
+                cell_boxes.append(first_box)
+                if len(split_indices) > 1:
+                    for split_index_1, split_index_2 in zip(
+                        split_indices[:-1], split_indices[1:]
+                    ):
+                        cell_box_ = {
+                        "coordinates": (
+                            row_min + split_index_1 + 1,
+                            col_min,
+                            row_max  + split_index_2,
+                            col_max,
+                        )
+                        }
+                        cell_boxes.append(cell_box_)
+                last_box = {
+                    "coordinates": (row_min + split_indices[-1] + 1, col_min, row_max, col_max)
+                }
+                cell_boxes.append(last_box)
+                return cell_boxes
+            cell_boxes = _split_cell_box(split_indices)
+
+        all_text = ""
+        for cell_box_ in cell_boxes:
+            row_min, col_min, row_max, col_max = cell_box_["coordinates"]
+            crop = inverted[row_min:row_max, col_min:col_max]
+
+            # Seems to get better results without processing
+            # Besides refining the box
+            # crop_processed = self._process_crop_before_read(crop)
+
+            p = self.config.cell_box_crop_padding
+            crop_refined, _ = self._refine_crop(crop=crop, padding=p)
+            result = self.reader.readtext(crop_refined)
+            def _get_text_from_result(crop_refined):
+                result = self.reader.readtext(crop_refined)
+                if not result:
+                    text = ""
+                else:
+                    text = result[0][1]
+                    for box in result[1:]:
+                        box_text = box[1]
+                        text_sep = "" if text[-1] == "-" else " "
+                        text += f"{text_sep}{box_text}"
+                return f"{text}\n"
+            text = _get_text_from_result(result)
+
+            def _add_text(text, all_text):
+
+                if not all_text:
+                    all_text = text
+                else:
+                    # text[-1] is `\n`
+                    sep = "" if all_text[-2] == "-" else " "
+                    all_text += f"{sep}{text}"
+
+                return all_text
+            all_text = _add_text(text, all_text)
+
+        # Remove last newline
+        all_text = all_text[:-1] if all_text[-1:] == "\n" else all_text
+        cell_box["text"] = all_text
+
+        return cell_box
+            
+
+        # result = self.reader.readtext(crop)
+        # if not result:
+        #     cell_box["text"] = ""
+        #     return cell_box
+
+        # text = result[0][1]
+
+        # for box in result[1:]:
+        #     box_text = box[1]
+        #     sep = "" if text[-1] == "-" else " "
+        #     text += f"{sep}{box_text}"
+
+        # cell_box["text"] = text
+
+        # return cell_box
 
     @staticmethod
     def _get_blobs(binary: np.ndarray) -> list:
@@ -232,8 +508,8 @@ class PDFTextReader:
         image_inverted = cv2.bitwise_not(image)
 
         # Grayscale and invert, such that underlines are white.
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        inverted = cv2.bitwise_not(gray)
+        # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        inverted = cv2.bitwise_not(image)
 
         # Morphological opening.
         # Removed everything that doesn't look like an underline.
@@ -418,9 +694,9 @@ class PDFTextReader:
             np.ndarray:
                 Processed top part.
         """
-        page_top_gray = cv2.cvtColor(page_top, cv2.COLOR_BGR2GRAY)
+        # page_top_gray = cv2.cvtColor(page_top, cv2.COLOR_BGR2GRAY)
         logo_binary = self._binarize(
-            image=page_top_gray, threshold=230, val_min=0, val_max=255
+            image=page_top, threshold=230, val_min=0, val_max=255
         )
         inverted = cv2.bitwise_not(logo_binary)
         return inverted
@@ -462,7 +738,7 @@ class PDFTextReader:
             np.ndarray:
                 Processed image.
         """
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
         # For the anonymized boxes there already are black boxes,
         # but we will remove the text inside them, by making the text black.
@@ -471,15 +747,15 @@ class PDFTextReader:
         # but that text is simply removed by making a black box.
         for box in anonymized_boxes:
             row_min, col_min, row_max, col_max = box["coordinates"]
-            gray[row_min : row_max + 1, col_min : col_max + 1] = 0
+            image[row_min : row_max + 1, col_min : col_max + 1] = 0
 
         # Make underlines black
         for underline in underlines:
             row_min, col_min, row_max, col_max = underline
-            gray[row_min : row_max + 1, col_min : col_max + 1] = 0
+            image[row_min : row_max + 1, col_min : col_max + 1] = 0
 
         # Invert such that it is white text on black background.
-        inverted = cv2.bitwise_not(gray)
+        inverted = cv2.bitwise_not(image)
 
         # Image has been inverted, such that it is white text on black background.
         # However this also means that the boxes currently are white.
@@ -519,9 +795,60 @@ class PDFTextReader:
                 row_min - pad : row_max + 1 + pad, col_min - pad : col_max + 1 + pad
             ] = 0
 
+        def _get_cell_boxes(filled: np.ndarray):
+
+            # from img2table.ocr import EasyOCR
+
+            # easyocr = EasyOCR(lang=["da"], kw={"gpu": False})
+            # Same tmp .png file
+            with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
+                inverted = cv2.bitwise_not(filled)
+                cv2.imwrite(tmp.name, inverted)
+                table_image = TableImage(src=tmp.name, detect_rotation=False)
+                extracted_tables = table_image.extract_tables()
+
+            cell_boxes = []
+            extracted_table_coordinates = []
+            for table in extracted_tables:
+                row_min, col_min, row_max, col_max = (
+                    table.bbox.y1,
+                    table.bbox.x1,
+                    table.bbox.y2,
+                    table.bbox.x2,
+                )
+                extracted_table_coordinates.append((row_min, col_min, row_max, col_max))
+                for row in table.content.values():
+                    for cell in row:
+                        cell_box = self._to_box_format(cell)
+                        cell_boxes.append(cell_box)
+
+            return cell_boxes, extracted_table_coordinates
+
+        _read_tables(filled)
+
+        # Remove tables
+        for table_coordinates in extracted_table_coordinates:
+            row_min, col_min, row_max, col_max = table_coordinates
+            p = self.config.remove_cell_border
+            filled[row_min - p : row_max + p, col_min - p : col_max + p] = 0
+
         # Increase size of letters slightly
         dilated = cv2.dilate(filled, np.ones((2, 2)))
-        return dilated
+        image_processed = dilated
+
+        return image_processed, cell_boxes
+
+    def _to_box_format(self, cell: BBox):
+        row_min, col_min, row_max, col_max = (
+            cell.bbox.y1,
+            cell.bbox.x1,
+            cell.bbox.y2,
+            cell.bbox.x2,
+        )
+        s = self.config.cell_box_shrink
+        # Better way to remove white border?
+        # Flood fill if border is white?
+        return {"coordinates": (row_min + s, col_min + s, row_max - s, col_max - s)}
 
     def _get_text_from_boxes(self, boxes: List[dict]) -> str:
         """Get text from boxes.
@@ -703,15 +1030,15 @@ class PDFTextReader:
                 Anonymized box with anonymized text.
         """
 
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
         # Easyocr seems to work best with white text on black background.
         if invert:
-            gray = cv2.bitwise_not(gray)
+            image = cv2.bitwise_not(image)
 
         row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
 
-        crop = gray[row_min : row_max + 1, col_min : col_max + 1]
+        crop = image[row_min : row_max + 1, col_min : col_max + 1]
 
         # Make a box for each word in the box
         # I get better results with easyocr using this approach.
@@ -722,37 +1049,18 @@ class PDFTextReader:
         # E.g. the first box will contain the first word of `anonymized_box`.
         for anonymized_box_ in anonymized_boxes:
             row_min, col_min, row_max, col_max = anonymized_box_["coordinates"]
-            crop = gray[row_min : row_max + 1, col_min : col_max + 1]
-            crop_refined, box_length = self._refine_crop(crop)
+            crop = image[row_min : row_max + 1, col_min : col_max + 1]
+            
 
             # If length of box is short, then there are probably only a few letters in the box.
             # In this case, scale the image up.
-            scale = (
-                1
-                if box_length > BOX_LENGTH_SCALE_THRESHOLD
-                else BOX_LENGTH_SCALE_THRESHOLD / box_length + 1
-            )
-            scale = min(scale, self.config.max_scale)
 
-            scaled = cv2.resize(crop_refined, (0, 0), fx=scale, fy=scale)
 
-            # Increase size of letters
-            dilated = cv2.dilate(scaled, np.ones((2, 2)))
 
-            dilated_boundary = self._add_boundary(dilated)
-
-            sharpened = (
-                np.array(
-                    skimage.filters.unsharp_mask(
-                        dilated_boundary, radius=20, amount=1.9
-                    ),
-                    dtype=np.uint8,
-                )
-                * 255  # output of unsharp_mask is in range [0, 1], but we want [0, 255]
-            )
+            crop_processed = self._process_crop_before_read(crop)
 
             # Read text from image with easyocr
-            result = self.reader.readtext(sharpened)
+            result = self.reader.readtext(crop_processed)
 
             if len(result) == 0:
                 text = ""
@@ -771,8 +1079,37 @@ class PDFTextReader:
 
         anonymized_box["text"] = f"<anonym>{text_all}</anonym>" if text_all else ""
         return anonymized_box
+    
+    def _process_crop_before_read(self, crop):
+        crop_refined, box_length = self._refine_crop(crop)
 
-    def _refine_crop(self, crop: np.ndarray) -> Tuple[np.ndarray, float]:
+        scale = (
+            1
+            if box_length > BOX_LENGTH_SCALE_THRESHOLD
+            else BOX_LENGTH_SCALE_THRESHOLD / box_length + 1
+        )
+        scale = min(scale, self.config.max_scale)
+
+        scaled = cv2.resize(crop_refined, (0, 0), fx=scale, fy=scale)
+
+        # Increase size of letters
+        dilated = cv2.dilate(scaled, np.ones((2, 2)))
+
+        dilated_boundary = self._add_boundary(dilated)
+
+        sharpened = (
+            np.array(
+                skimage.filters.unsharp_mask(
+                    dilated_boundary, radius=20, amount=1.9
+                ),
+                dtype=np.uint8,
+            )
+            * 255  # output of unsharp_mask is in range [0, 1], but we want [0, 255]
+        )
+        crop_processed = sharpened
+        return crop_processed
+
+    def _refine_crop(self, crop: np.ndarray, padding: int = 3) -> Tuple[np.ndarray, float]:
         """Refine crop.
 
         Mostly relevant for boxes that have been split into multiple boxes.
@@ -787,11 +1124,17 @@ class PDFTextReader:
             float:
                 Length of box
         """
-        rows, cols = np.where(crop > 0)
+        binary = self._binarize(
+            image=crop,
+            threshold=100,
+            val_min=0,
+            val_max=255,
+        )
+        rows, cols = np.where(binary > 0)
         col_first, col_last = cols.min(), cols.max()
         row_first, row_last = rows.min(), rows.max()
         crop_fitted = crop[row_first : row_last + 1, col_first : col_last + 1]
-        crop_boundary = self._add_boundary(crop_fitted, padding=3)
+        crop_boundary = self._add_boundary(crop_fitted, padding=padding)
         box_length = col_last - col_first
         return crop_boundary, box_length
 
@@ -806,12 +1149,12 @@ class PDFTextReader:
             List[dict]:
                 List of anonymized boxes.
         """
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
         # Mean filter to make text outside boxes
         # brigther than color of boxes.
         footprint = np.ones((1, 15))
-        averaged = rank.mean(gray, footprint=footprint)
+        averaged = rank.mean(image, footprint=footprint)
 
         binary = self._binarize(
             image=averaged,
@@ -1127,16 +1470,16 @@ class PDFTextReader:
             anonymized_box (dict):
                 Anonymized box with refined coordinates.
         """
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
         binary = self._binarize(
-            image=gray, threshold=self.config.threshold_binarize_refine_anonymized_box
+            image=image, threshold=self.config.threshold_binarize_refine_anonymized_box
         )
 
         row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
 
         # +1 as slice is exclusive and box coordinates are inclusive.
-        crop = gray[row_min : row_max + 1, col_min : col_max + 1]
+        crop = image[row_min : row_max + 1, col_min : col_max + 1]
 
         # If empty/black box, box should be ignored
         if crop.sum() == 0:
@@ -1392,6 +1735,7 @@ class PDFTextReader:
             return [anonymized_box]
         else:
             anonymized_boxes = []
+
             row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
             first_box = {
                 "coordinates": (row_min, col_min, row_max, col_min + split_indices[0])

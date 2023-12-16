@@ -122,11 +122,11 @@ def test_get_text_from_boxes(pdf_text_reader, boxes, text_expected):
         ),
     ],
 )
-def test_read_text_from_anonymized_box(
+def test_read_text_from_box(
     pdf_text_reader, image_path, anonymized_box, invert, text_expected
 ):
     image = np.array(Image.open(image_path))
-    anonymized_box = pdf_text_reader._read_text_from_anonymized_box(
+    anonymized_box = pdf_text_reader._read_text_from_box(
         image=image, anonymized_box=anonymized_box, invert=invert
     )
     assert anonymized_box["text"] == text_expected
@@ -246,4 +246,4 @@ def test_remove_logo(pdf_text_reader, image_path, difference_flag_expected):
 
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_read_text_from_anonymized_box"])
+    pytest.main([__file__ + "::test_read_text_from_box"])
