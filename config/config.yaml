@@ -136,7 +136,7 @@ process:
   test_case_id: "1"
 
 ## Debug
-image_idx: 2 # page number
+image_idx: False # page number
 
 # Finalize arguments
 finalize:
