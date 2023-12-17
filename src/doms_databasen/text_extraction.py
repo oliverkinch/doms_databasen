@@ -20,6 +20,7 @@ from skimage import measure
 from skimage.filters import rank
 from skimage.measure._regionprops import RegionProperties
 from tika import parser
+from tabulate import tabulate
 
 from src.doms_databasen.constants import (
     BOX_HEIGHT_LOWER_BOUND,
@@ -150,7 +151,7 @@ class PDFTextReader:
                     image=image.copy(),
                 )
                 anonymized_boxes_from_underlines_with_text = [
-                    self._read_text_from_box(
+                    self._read_text_from_anonymized_box(
                         image.copy(),
                         box,
                         invert=self.config.invert_find_underline_anonymizations,
@@ -193,11 +194,11 @@ class PDFTextReader:
                 anonymized_boxes_with_text + anonymized_boxes_from_underlines_with_text
             )
 
-            tables = self._find_tables(image=image.copy())
+            table_boxes = self._find_tables(image=image.copy())
 
             # Remove anonymized boxes from image
-            image_processed, cell_boxes = self._process_image(
-                image.copy(), all_anonymized_boxes_with_text, underlines
+            image_processed = self._process_image(
+                image=image.copy(), anonymized_boxes=all_anonymized_boxes_with_text, underlines=underlines, table_boxes=table_boxes
             )
 
             # cell_boxes_with_text = [
@@ -212,7 +213,7 @@ class PDFTextReader:
             boxes = [self._change_box_format(box) for box in result]
 
             # Merge all boxes
-            all_boxes = boxes + all_anonymized_boxes_with_text
+            all_boxes = boxes + all_anonymized_boxes_with_text + table_boxes
             page_text = self._get_text_from_boxes(boxes=all_boxes)
             pdf_text += f"{page_text}\n\n"
 
@@ -223,12 +224,34 @@ class PDFTextReader:
             inverted = cv2.bitwise_not(image)
             cv2.imwrite(tmp.name, inverted)
             table_image = TableImage(src=tmp.name, detect_rotation=False)
-            extracted_tables = table_image.extract_tables()
+            tables = table_image.extract_tables()
 
-        for table in extracted_tables:
+        for table in tables:
             self._read_table(table, image)
         
-        return extracted_tables
+        table_boxes = [self._table_to_box_format(table) for table in tables]
+
+        return table_boxes
+
+    def _table_to_box_format(self, table):
+        row_min, col_min, row_max, col_max = (
+            table.bbox.y1,
+            table.bbox.x1,
+            table.bbox.y2,
+            table.bbox.x2,
+        )
+
+        table_string = tabulate(table.df, showindex="never", tablefmt=self.config.table_format)
+        
+        table_box = {
+            "coordinates": (row_min, col_min, row_max, col_max),
+            "text": table_string
+        }
+        return table_box
+
+
+    def _get_column_widths(self, df, table):
+        return [max(len(s.split("\n")[0]) for s in df[col]) for col in df.columns]
 
     def _read_table(self, table, image):
         for row in table.content.values():
@@ -719,7 +742,7 @@ class PDFTextReader:
         return abs(y - y_prev) < self.config.max_y_difference
 
     def _process_image(
-        self, image: np.ndarray, anonymized_boxes: List[dict], underlines: List[tuple]
+        self, image: np.ndarray, anonymized_boxes: List[dict], underlines: List[tuple], table_boxes
     ) -> np.ndarray:
         """Prepare image for easyocr to read the main text (all non-anonymized text).
 
@@ -738,27 +761,22 @@ class PDFTextReader:
             np.ndarray:
                 Processed image.
         """
-        # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
         # For the anonymized boxes there already are black boxes,
         # but we will remove the text inside them, by making the text black.
         # The boxes made above underlines is included in the anonymized boxes.
         # For these there are no boxes above them, but only text,
         # but that text is simply removed by making a black box.
-        for box in anonymized_boxes:
-            row_min, col_min, row_max, col_max = box["coordinates"]
-            image[row_min : row_max + 1, col_min : col_max + 1] = 0
+        image = self._remove_text_in_anonymized_boxes(
+            image=image, anonymized_boxes=anonymized_boxes
+        )
 
-        # Make underlines black
-        for underline in underlines:
-            row_min, col_min, row_max, col_max = underline
-            image[row_min : row_max + 1, col_min : col_max + 1] = 0
+        image = self._draw_bbox_for_underlines(image=image, underlines=underlines)
 
         # Invert such that it is white text on black background.
         inverted = cv2.bitwise_not(image)
 
         # Image has been inverted, such that it is white text on black background.
-        # However this also means that the boxes currently are white.
+        # However this also means that the boxes and underlines currently are white.
         # We want to remove them entirely. We do this using flood fill.
         filled = inverted.copy()
 
@@ -795,48 +813,34 @@ class PDFTextReader:
                 row_min - pad : row_max + 1 + pad, col_min - pad : col_max + 1 + pad
             ] = 0
 
-        def _get_cell_boxes(filled: np.ndarray):
-
-            # from img2table.ocr import EasyOCR
-
-            # easyocr = EasyOCR(lang=["da"], kw={"gpu": False})
-            # Same tmp .png file
-            with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
-                inverted = cv2.bitwise_not(filled)
-                cv2.imwrite(tmp.name, inverted)
-                table_image = TableImage(src=tmp.name, detect_rotation=False)
-                extracted_tables = table_image.extract_tables()
-
-            cell_boxes = []
-            extracted_table_coordinates = []
-            for table in extracted_tables:
-                row_min, col_min, row_max, col_max = (
-                    table.bbox.y1,
-                    table.bbox.x1,
-                    table.bbox.y2,
-                    table.bbox.x2,
-                )
-                extracted_table_coordinates.append((row_min, col_min, row_max, col_max))
-                for row in table.content.values():
-                    for cell in row:
-                        cell_box = self._to_box_format(cell)
-                        cell_boxes.append(cell_box)
-
-            return cell_boxes, extracted_table_coordinates
-
-        _read_tables(filled)
-
         # Remove tables
-        for table_coordinates in extracted_table_coordinates:
-            row_min, col_min, row_max, col_max = table_coordinates
-            p = self.config.remove_cell_border
-            filled[row_min - p : row_max + p, col_min - p : col_max + p] = 0
+        filled = self._remove_tables(image=filled, table_boxes=table_boxes)
 
         # Increase size of letters slightly
         dilated = cv2.dilate(filled, np.ones((2, 2)))
         image_processed = dilated
 
-        return image_processed, cell_boxes
+        return image_processed
+
+    def _draw_bbox_for_underlines(self, image: np.ndarray, underlines) -> np.ndarray:
+        for underline in underlines:
+            row_min, col_min, row_max, col_max = underline
+            image[row_min : row_max, col_min : col_max] = 0
+        return image
+
+    def _remove_text_in_anonymized_boxes(self, image, anonymized_boxes):
+        for box in anonymized_boxes:
+            row_min, col_min, row_max, col_max = box["coordinates"]
+            image[row_min : row_max + 1, col_min : col_max + 1] = 0
+        return image
+    
+    def _remove_tables(self, image: np.ndarray, table_boxes):
+        for table_box in table_boxes:
+            row_min, col_min, row_max, col_max = table_box["coordinates"]
+
+            p = self.config.remove_table_border
+            image[row_min - p : row_max + p, col_min - p : col_max + p] = 0
+        return image
 
     def _to_box_format(self, cell: BBox):
         row_min, col_min, row_max, col_max = (

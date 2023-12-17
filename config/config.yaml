@@ -69,6 +69,9 @@ remove_cell_border: 5
 cell_box_shrink: 5
 cell_box_crop_padding: 21
 
+table_format: grid
+remove_table_border: 7
+
 message_pdf_has_no_anonymized_boxes: >
   No anonymized boxes detected on first page 1.
   There will therefore not be searched for
