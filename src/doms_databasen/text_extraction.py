@@ -2,7 +2,8 @@
 
 import tempfile
 from logging import getLogger
-from typing import List, Tuple
+from pathlib import Path
+from typing import List, Tuple, Union
 
 import cv2
 import easyocr
@@ -12,7 +13,7 @@ import pypdfium2 as pdfium
 import pytesseract
 import skimage
 from img2table.document import Image as TableImage
-from img2table.tables.objects.extraction import BBox
+from img2table.tables.objects.extraction import ExtractedTable, TableCell
 from omegaconf import DictConfig
 from pdf2image import convert_from_path
 from pypdf import PdfReader
@@ -50,7 +51,7 @@ class PDFTextReader:
         self.config = config
         self.reader = easyocr.Reader(["da"], gpu=config.gpu)
 
-    def extract_text(self, pdf_path: str) -> str:
+    def extract_text(self, pdf_path: Path) -> str:
         """Extracts text from a PDF using easyocr or tika.
 
         Tika is only used if there are no indications of anonymization.
@@ -61,7 +62,7 @@ class PDFTextReader:
         reading the rest of the text with easyocr.
 
         Args:
-            pdf_path (str):
+            pdf_path (Path):
                 Path to PDF.
 
         Returns:
@@ -128,9 +129,7 @@ class PDFTextReader:
                         # no anonymization is found on the first page,
                         # and that Tika fails, then use easyocr.
 
-            all_anonymized_boxes = (
-                anonymized_boxes + anonymized_boxes_underlines
-            )
+            all_anonymized_boxes = anonymized_boxes + anonymized_boxes_underlines
 
             table_boxes = self._find_tables(image=image.copy())
 
@@ -150,22 +149,57 @@ class PDFTextReader:
             pdf_text += f"{page_text}\n\n"
 
         return pdf_text.strip()
-    
-    def _get_main_text_boxes(self, image):
+
+    def _get_main_text_boxes(self, image: np.ndarray) -> List[dict]:
+        """Read main text of page.
+
+        Args:
+            image (np.ndarray):
+                Image to read text from.
+
+        Returns:
+            main_text_boxes (List[dict]):
+                List of boxes with coordinates and text.
+        """
         result = self.reader.readtext(image)
 
         main_text_boxes = [self._change_box_format(box) for box in result]
         return main_text_boxes
 
-
     def _anonymization_methods_used_in_pdf(
-        self, anonymized_boxes, anonymized_boxes_underlines
-    ):
+        self, anonymized_boxes: List[dict], anonymized_boxes_underlines: List
+    ) -> Tuple[bool, bool]:
+        """Determine which anonymization methods are used in the PDF.
+
+        Args:
+            anonymized_boxes (List[dict]):
+                List of anonymized boxes with coordinates.
+            anonymized_boxes_underlines (List[dict]):
+                List of anonymized boxes with coordinates.
+
+        Returns:
+            box_anonymization (bool):
+                True if anonymized boxes are used in PDF. False otherwise.
+            underline_anonymization (bool):
+                True if underlines are used in PDF. False otherwise.
+        """
         box_anonymization = bool(anonymized_boxes)
         underline_anonymization = bool(anonymized_boxes_underlines)
         return box_anonymization, underline_anonymization
 
-    def _extract_anonymized_boxes(self, image):
+    def _extract_anonymized_boxes(self, image: np.ndarray) -> List[dict]:
+        """Extract anonymized boxes from image.
+
+        Find and read text from anonymized boxes in image.
+
+        Args:
+            image (np.ndarray):
+                Image to find anonymized boxes in.
+
+        Returns:
+            anonymized_boxes_with_text (List[dict]):
+                List of anonymized boxes with coordinates and text.
+        """
         anonymized_boxes = self._find_anonymized_boxes(image=image.copy())
 
         anonymized_boxes_with_text = [
@@ -179,33 +213,64 @@ class PDFTextReader:
 
         return anonymized_boxes_with_text
 
-    def _extract_underline_anonymization_boxes(self, image):
-        (
-            anonymized_boxes_from_underlines,
-            underlines,
-        ) = self._line_anonymization_to_boxes(
+    def _extract_underline_anonymization_boxes(self, image: np.ndarray) -> Tuple:
+        """Extract boxes from underline anonymization.
+
+        Find underlines, make boxes above them, and read text from the boxes.
+
+        Args:
+            image (np.ndarray):
+                Image to find underline anonymization in.
+
+        Returns:
+            anonymized_boxes_underlines_ (List[dict]):
+                List of boxes with coordinates and text.
+            underlines (List[tuple]):
+                List of underlines with coordinates.
+        """
+        (anonymized_boxes_underlines, underlines,) = self._line_anonymization_to_boxes(
             image=image.copy(),
         )
 
-        anonymized_boxes_from_underlines_with_text = [
+        anonymized_boxes_underlines_ = [
             self._read_text_from_anonymized_box(
                 image.copy(),
                 box,
                 invert=self.config.invert_find_underline_anonymizations,
             )
-            for box in anonymized_boxes_from_underlines
+            for box in anonymized_boxes_underlines
         ]
-        return anonymized_boxes_from_underlines_with_text, underlines
+        return anonymized_boxes_underlines_, underlines
 
-    def _log_anonymization_methods(self, box_anonymization, underlines_anonymization):
+    def _log_anonymization_methods(
+        self, box_anonymization, underlines_anonymization
+    ) -> None:
+        """Log info about which anonymization methods are used in the PDF.
+
+        Args:
+            box_anonymization (bool):
+                True if anonymized boxes are used in PDF. False otherwise.
+            underlines_anonymization (bool):
+                True if underlines are used in PDF. False otherwise.
+        """
         if not box_anonymization:
             logger.info(self.config.message_pdf_has_no_anonymized_boxes)
         if not underlines_anonymization:
             logger.info(self.config.message_pdf_has_no_underline_anonymizations)
 
     def _get_images(self, pdf_path):
+        """Get images from PDF.
+
+        Args:
+            pdf_path (Path):
+                Path to PDF.
+
+        Returns:
+            images (List[np.ndarray]):
+                List of images.
+        """
         if self.config.image_idx:
-            # Used to test on a single page
+            # Used for debugging a single page
             images = map(
                 np.array,
                 convert_from_path(
@@ -222,7 +287,17 @@ class PDFTextReader:
         images = map(lambda image: cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), images)
         return images
 
-    def _find_tables(self, image: np.ndarray):
+    def _find_tables(self, image: np.ndarray) -> List[dict]:
+        """Extract tables from the image.
+
+        Args:
+            image (np.ndarray):
+                Image to find tables in.
+
+        Returns:
+            table_boxes (List[dict]):
+                List of tables with coordinates and text.
+        """
         with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
             inverted = cv2.bitwise_not(image)
             cv2.imwrite(tmp.name, inverted)
@@ -230,19 +305,45 @@ class PDFTextReader:
             tables = table_image.extract_tables()
 
         for table in tables:
-            self._read_table(table, image)
+            self._read_table(table=table, image=image)
 
         table_boxes = [self._table_to_box_format(table) for table in tables]
 
         return table_boxes
 
-    def _table_to_box_format(self, table):
+    def _get_coordinates(
+        self, table_or_cell: List[Union[ExtractedTable, TableCell]]
+    ) -> tuple:
+        """Get coordinates of table or cell.
+
+        Args:
+            table_or_cell (Union[ExtractedTable, TableCell]):
+                Table or cell to get coordinates from.
+
+        Returns:
+            (tuple):
+                Coordinates of table or cell.
+        """
         row_min, col_min, row_max, col_max = (
-            table.bbox.y1,
-            table.bbox.x1,
-            table.bbox.y2,
-            table.bbox.x2,
+            table_or_cell.bbox.y1,
+            table_or_cell.bbox.x1,
+            table_or_cell.bbox.y2,
+            table_or_cell.bbox.x2,
         )
+        return row_min, col_min, row_max, col_max
+
+    def _table_to_box_format(self, table: ExtractedTable) -> dict:
+        """Convert table to box format.
+
+        Args:
+            table (ExtractedTable):
+                Table to convert.
+
+        Returns:
+            table_box (dict):
+                Table in box format.
+        """
+        row_min, col_min, row_max, col_max = self._get_coordinates(table_or_cell=table)
 
         table_string = tabulate(
             table.df, showindex="never", tablefmt=self.config.table_format
@@ -254,15 +355,28 @@ class PDFTextReader:
         }
         return table_box
 
-    def _get_column_widths(self, df, table):
-        return [max(len(s.split("\n")[0]) for s in df[col]) for col in df.columns]
+    def _read_table(self, table: ExtractedTable, image: np.ndarray) -> None:
+        """Read text in table.
 
-    def _read_table(self, table, image):
+        Args:
+            table (ExtractedTable):
+                Table to read text from.
+            image (np.ndarray):
+                Image that the table is extracted from.
+        """
         for row in table.content.values():
             for cell in row:
                 self._read_text_from_cell(cell, image)
 
-    def _read_text_from_cell(self, cell, image):
+    def _read_text_from_cell(self, cell: TableCell, image: np.ndarray) -> None:
+        """Read text from cell with easyocr.
+
+        Args:
+            cell (TableCell):
+                Cell to read text from.
+            image (np.ndarray):
+                Image that the cell is extracted from.
+        """
         inverted = cv2.bitwise_not(image)
         cell_box = self._cell_to_box(cell)
         row_min, col_min, row_max, col_max = cell_box["coordinates"]
@@ -270,9 +384,8 @@ class PDFTextReader:
         crop = inverted[row_min:row_max, col_min:col_max]
         binary = self._binarize(image=crop, threshold=100)
         if binary.sum() == 0:
-            cell_box["text"] = ""
             cell.value = ""
-            return cell_box
+            return
 
         split_indices = self._multiple_lines(binary=binary)
         if not split_indices:
@@ -288,15 +401,25 @@ class PDFTextReader:
                 crop=crop, padding=self.config.cell_box_crop_padding
             )
 
-            text = self._get_text_from_result(crop_refined)
+            text = self._read_text(crop_refined)
             all_text = self._add_text(text, all_text)
 
-        # Remove last newline
+        # Remove last newline character
         all_text = all_text[:-1] if all_text[-1:] == "\n" else all_text
-        cell_box["text"] = all_text
         cell.value = all_text
 
-    def _get_text_from_result(self, crop_refined):
+    def _read_text(self, crop_refined: np.ndarray) -> str:
+        """Read text from subimage of cell.
+
+        Args:
+            crop_refined (np.ndarray):
+                Subimage of cell.
+
+        Returns:
+            (str):
+                Text from subimage of cell.
+        """
+
         result = self.reader.readtext(crop_refined)
         if not result:
             text = ""
@@ -304,11 +427,23 @@ class PDFTextReader:
             text = result[0][1]
             for box in result[1:]:
                 box_text = box[1]
-                text_sep = "" if text[-1] == "-" else " "
-                text += f"{text_sep}{box_text}"
+                sep = "" if text[-1] == "-" else " "
+                text += f"{sep}{box_text}"
         return f"{text}\n"
 
-    def _add_text(self, text, all_text):
+    def _add_text(self, text: str, all_text: str) -> str:
+        """Add text from subimage of cell to all text from cell.
+
+        Args:
+            text (str):
+                Text from subimage of cell.
+            all_text (str):
+                All text from cell.
+
+        Returns:
+            all_text (str):
+                All text from cell.
+        """
         if not all_text:
             all_text = text
         else:
@@ -318,17 +453,34 @@ class PDFTextReader:
 
         return all_text
 
-    def _split_cell_box(self, cell_box, split_indices):
+    def _split_cell_box(
+        self, cell_box: TableCell, split_indices: List[int]
+    ) -> List[dict]:
+        """Split cell box into multiple cell boxes.
+
+        Split each cell box into multiple cell boxes, one for each line.
+
+        Args:
+            cell_box (TableCell):
+                Cell box to split.
+            split_indices (List[int]):
+                Indices to split cell box at.
+
+        Returns:
+            cell_boxes (List[dict]):
+                List of cell boxes.
+        """
         row_min, col_min, row_max, col_max = cell_box["coordinates"]
-        if len(split_indices) == 3:
-            print("aloha")
 
         cell_boxes = []
 
+        # First box.
         first_box = {
             "coordinates": (row_min, col_min, row_min + split_indices[0], col_max)
         }
         cell_boxes.append(first_box)
+
+        # Boxes in between first and last.
         if len(split_indices) > 1:
             for split_index_1, split_index_2 in zip(
                 split_indices[:-1], split_indices[1:]
@@ -342,27 +494,50 @@ class PDFTextReader:
                     )
                 }
                 cell_boxes.append(cell_box_)
+
+        # Last box.
         last_box = {
             "coordinates": (row_min + split_indices[-1] + 1, col_min, row_max, col_max)
         }
         cell_boxes.append(last_box)
+
         return cell_boxes
 
-    def _cell_to_box(self, cell):
+    def _cell_to_box(self, cell: TableCell) -> dict:
+        """Convert cell to box format.
+
+        Args:
+            cell (TableCell):
+                Cell to convert.
+
+        Returns:
+            cell_box (dict):
+                Cell in box format.
+        """
         p = self.config.remove_cell_border
-        row_min, col_min, row_max, col_max = (
-            cell.bbox.y1 + p,
-            cell.bbox.x1 + p,
-            cell.bbox.y2 - p,
-            cell.bbox.x2 - p,
-        )
-        cell_box = {"coordinates": (row_min, col_min, row_max, col_max)}
+        row_min, col_min, row_max, col_max = self._get_coordinates(table_or_cell=cell)
+        cell_box = {"coordinates": (row_min + p, col_min + p, row_max - p, col_max - p)}
         return cell_box
 
-    def _multiple_lines(self, binary):
+    def _multiple_lines(self, binary: np.ndarray) -> List[int]:
+        """Used to detect multiple lines in a cell.
+
+        Args:
+            binary (np.ndarray):
+                Binary image of cell.
+
+        Returns:
+            split_indices (List[int]):
+                Row indices to split cell at.
+        """
+
         rows, _ = np.where(binary > 0)
         diffs = np.diff(rows)
-        jump_indices = np.where(diffs > 10)[0]
+
+        # Locate where the there are large gaps without text.
+        jump_indices = np.where(diffs > self.config.cell_multiple_lines_gap_threshold)[
+            0
+        ]
         split_indices = []
         for jump_idx in jump_indices:
             top = rows[jump_idx]
@@ -421,7 +596,7 @@ class PDFTextReader:
         inverted = cv2.bitwise_not(image)
 
         # Morphological opening.
-        # Removed everything that doesn't look like an underline.
+        # Remove everything that doesn't look like an underline.
         eroded = cv2.erode(inverted, np.ones((1, 50)), iterations=1)
         dilated = cv2.dilate(eroded, np.ones((1, 50)), iterations=1)
 
@@ -439,10 +614,13 @@ class PDFTextReader:
 
             height = row_max - row_min
             if blob.area == blob.area_bbox and lb < height < ub:
-                box_row_min = row_min - 50  # Give box a height of 50 pixels
+                p = self.config.underline_box_padding
+                box_row_min = (
+                    row_min - self.config.underline_box_height
+                )  # Give box a height of 50 pixels
                 box_row_max = row_min - 1  # Just above underline
-                box_col_min = col_min + 5  # Avoid ,) etc. Box will be refined later.
-                box_col_max = col_max - 5
+                box_col_min = col_min + p  # Avoid ,) etc. Box will be refined later.
+                box_col_max = col_max - p
 
                 anonymized_box = {
                     "coordinates": (box_row_min, box_col_min, box_row_max, box_col_max)
@@ -471,7 +649,7 @@ class PDFTextReader:
     def _too_much_overlap(self, box_1: dict, box_2: dict) -> bool:
         """Used to determine if two boxes overlap too much.
 
-        Case 1586 page 4 has an anonymization with two underlines,
+        For example case 1586 page 4 has an anonymization with two underlines,
         which results in two boxes overlapping. This function is used
         to determine if the boxes overlap too much.
 
@@ -712,19 +890,55 @@ class PDFTextReader:
 
         return image_processed
 
-    def _draw_bbox_for_underlines(self, image: np.ndarray, underlines) -> np.ndarray:
+    def _draw_bbox_for_underlines(
+        self, image: np.ndarray, underlines: List[tuple]
+    ) -> np.ndarray:
+        """Draws bounding boxes for underlines.
+
+        Args:
+            image (np.ndarray):
+                Image to draw bounding boxes on.
+            underlines (List[tuple]):
+                List of underlines with coordinates.
+
+        Returns:
+            np.ndarray:
+                Image with bounding boxes drawn on the underlines.
+        """
         for underline in underlines:
             row_min, col_min, row_max, col_max = underline
             image[row_min:row_max, col_min:col_max] = 0
         return image
 
-    def _remove_text_in_anonymized_boxes(self, image, anonymized_boxes):
+    def _remove_text_in_anonymized_boxes(
+        self, image: np.ndarray, anonymized_boxes: List[dict]
+    ) -> np.ndarray:
+        """Removes text in anonymized boxes.
+
+        Args:
+            image (np.ndarray):
+                Image where boxes are found in.
+            anonymized_boxes (List[dict]):
+                List of anonymized boxes with coordinates.
+        """
         for box in anonymized_boxes:
             row_min, col_min, row_max, col_max = box["coordinates"]
             image[row_min : row_max + 1, col_min : col_max + 1] = 0
         return image
 
-    def _remove_tables(self, image: np.ndarray, table_boxes):
+    def _remove_tables(self, image: np.ndarray, table_boxes: List[dict]) -> np.ndarray:
+        """Removes tables from image.
+
+        Args:
+            image (np.ndarray):
+                Image to remove tables from.
+            table_boxes (List[dict]):
+                List of tables with coordinates.
+
+        Returns:
+            np.ndarray:
+                Image with tables removed.
+        """
         for table_box in table_boxes:
             row_min, col_min, row_max, col_max = table_box["coordinates"]
 
@@ -732,17 +946,26 @@ class PDFTextReader:
             image[row_min - p : row_max + p, col_min - p : col_max + p] = 0
         return image
 
-    def _to_box_format(self, cell: BBox):
-        row_min, col_min, row_max, col_max = (
-            cell.bbox.y1,
-            cell.bbox.x1,
-            cell.bbox.y2,
-            cell.bbox.x2,
-        )
+    def _to_box_format(self, cell: TableCell):
+        """Convert cell to box format.
+
+        Args:
+            cell (TableCell):
+                Cell to convert.
+
+        Returns:
+            cell_box (dict):
+                Cell in box format.
+        """
+        row_min, col_min, row_max, col_max = self._get_coordinates(table_or_cell=cell)
         s = self.config.cell_box_shrink
         # Better way to remove white border?
         # Flood fill if border is white?
-        return {"coordinates": (row_min + s, col_min + s, row_max - s, col_max - s)}
+        # Might be possible to use `_remove_boundary_noise`
+        # Keep code as it is for now, as long as
+        # no problems are encountered.
+        cell_box = {"coordinates": (row_min + s, col_min + s, row_max - s, col_max - s)}
+        return cell_box
 
     def _get_text_from_boxes(self, boxes: List[dict]) -> str:
         """Get text from boxes.
@@ -923,9 +1146,6 @@ class PDFTextReader:
             anonymized_box (dict):
                 Anonymized box with anonymized text.
         """
-
-        # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
         # Easyocr seems to work best with white text on black background.
         if invert:
             image = cv2.bitwise_not(image)
@@ -971,7 +1191,19 @@ class PDFTextReader:
         anonymized_box["text"] = f"<anonym>{text_all}</anonym>" if text_all else ""
         return anonymized_box
 
-    def _process_crop_before_read(self, crop):
+    def _process_crop_before_read(self, crop: np.ndarray) -> np.ndarray:
+        """Processes crop before reading text with easyocr.
+
+        I get better results with easyocr using this approach.
+
+        Args:
+            crop (np.ndarray):
+                Crop (representing the anonymized box) to be processed.
+
+        Returns:
+            crop_processed (np.ndarray):
+                Processed crop.
+        """
         crop_refined, box_length = self._refine_crop(crop)
 
         scale = (
@@ -1266,7 +1498,7 @@ class PDFTextReader:
         return binary
 
     def _remove_boundary_noise(self, binary_crop: np.ndarray) -> np.ndarray:
-        """Removes noise on the boundary of a an anonymized box.
+        """Removes noise on the boundary of an anonymized box.
 
         All white pixels in a perfect bounding box should be a pixel of a relevant character.
         Some images have white pixel defect at the boundary of the bounding box, and
