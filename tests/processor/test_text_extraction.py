@@ -259,5 +259,17 @@ def test_remove_logo(pdf_text_reader, image_path, difference_flag_expected):
     assert difference_flag == difference_flag_expected
 
 
+@pytest.mark.parametrize(
+    "image_path, n_tables_expected",
+    [
+        ("tests/data/processor/page_with_table.png", 1),
+    ],
+)
+def test_find_tables(pdf_text_reader, image_path, n_tables_expected):
+    image = read_image(image_path)
+    table_boxes = pdf_text_reader._find_tables(image=image)
+    assert len(table_boxes) == n_tables_expected
+
+
 if __name__ == "__main__":
     pytest.main([__file__ + "::test_extract_text"])
