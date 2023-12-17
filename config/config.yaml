@@ -59,11 +59,21 @@ invert_find_underline_anonymizations: True
 underline_height_lower_bound: 1
 underline_height_upper_bound: 7
 underline_remove_pad: 1
+underline_box_height: 50
+underline_box_padding: 5
 
 line_start_ignore_col: 1200
 line_start_ignore_row: 3000
 
 max_expand_steps: 10
+
+remove_cell_border: 5
+cell_box_shrink: 5
+cell_box_crop_padding: 21
+cell_multiple_lines_gap_threshold: 10
+
+table_format: grid
+remove_table_border: 7
 
 message_pdf_has_no_anonymized_boxes: >
   No anonymized boxes detected on first page 1.
@@ -118,7 +128,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "2504"
+  case_id: "3791"
   all: False
   messages:
     give_correct_input: >
