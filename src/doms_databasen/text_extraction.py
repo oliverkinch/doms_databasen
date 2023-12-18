@@ -588,9 +588,6 @@ class PDFTextReader:
             self.config.underline_height_upper_bound,
         )
 
-        # Use this one when refining boxes
-        image_inverted = cv2.bitwise_not(image)
-
         # Grayscale and invert, such that underlines are white.
         # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         inverted = cv2.bitwise_not(image)
@@ -623,11 +620,17 @@ class PDFTextReader:
                 box_col_max = col_max - p
 
                 anonymized_box = {
-                    "coordinates": (box_row_min, box_col_min, box_row_max, box_col_max)
+                    "coordinates": [box_row_min, box_col_min, box_row_max, box_col_max]
                 }
 
+
+                crop = inverted[box_row_min:box_row_max, box_col_min:box_col_max]
+                if crop.sum() == 0:
+                    # Box is empty
+                    continue
+
                 anonymized_box_refined = self._refine_anonymized_box(
-                    anonymized_box, image_inverted
+                    anonymized_box=anonymized_box, image=inverted
                 )
 
                 if anonymized_box_refined:
@@ -983,6 +986,10 @@ class PDFTextReader:
             page_text (str):
                 Text from current page.
         """
+        if not boxes:
+            # Empty page supposedly
+            return ""
+
         # Sort w.r.t y coordinate.
         boxes_y_sorted = sorted(boxes, key=lambda box: self._middle_y_cordinate(box))
 
@@ -2044,7 +2051,7 @@ def save_cv2_image_tmp(image):
     cv2.imwrite("tmp.png", image)
 
 
-def draw_box(image, box):
+def draw_box(image, box, pixel_value=0):
     """Draws box on image.
 
     Used for debugging.
@@ -2055,8 +2062,7 @@ def draw_box(image, box):
     else:
         # blob
         row_min, col_min, row_max, col_max = box.bbox
-    if len(image.shape) == 2:
-        image[row_min : row_max + 1, col_min : col_max + 1] = 0
-    else:
-        image[row_min : row_max + 1, col_min : col_max + 1, :] = 0
+
+    image[row_min : row_max + 1, col_min : col_max + 1] = pixel_value
+
     save_cv2_image_tmp(image)
