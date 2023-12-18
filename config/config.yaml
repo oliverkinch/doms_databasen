@@ -44,6 +44,7 @@ iou_overlap_threshold: 0.5
 indices_to_split_count_min: 1
 indices_to_split_row_diff: 30
 max_scale: 3.3
+min_scale: 0.8
 
 threshold_binarize_anonymized_boxes: 1
 threshold_binarize_refine_anonymized_box: 30
@@ -128,7 +129,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "3791"
+  case_id: "374"
   all: False
   messages:
     give_correct_input: >

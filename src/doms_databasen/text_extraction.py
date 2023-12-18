@@ -1208,31 +1208,76 @@ class PDFTextReader:
                 Crop (representing the anonymized box) to be processed.
 
         Returns:
-            crop_processed (np.ndarray):
-                Processed crop.
+            crop_to_read (np.ndarray):
+                Crop to read text from.
         """
         crop_refined, box_length = self._refine_crop(crop)
 
+        scale = self._get_scale(box_length)
+        scaled = self._scale_image(image=crop_refined, scale=scale)
+
+        crop_processed = self._process_crop(crop=scaled)
+        crop_to_read = crop_processed
+        return crop_to_read
+
+    def _get_scale(self, box_length: int) -> float:
+        """Get scale to scale box/crop with.
+
+        Args:
+            box_length (int):
+                Length of box.
+
+        Returns:
+            float:
+                Scale to scale box/crop with.
+        """
         scale = (
-            1
+            BOX_LENGTH_SCALE_THRESHOLD / box_length
             if box_length > BOX_LENGTH_SCALE_THRESHOLD
             else BOX_LENGTH_SCALE_THRESHOLD / box_length + 1
         )
         scale = min(scale, self.config.max_scale)
+        scale = max(scale, self.config.min_scale)
+        return scale
+    
+    def _scale_image(self, image: np.ndarray, scale: float) -> np.ndarray:
+        """Scale image.
+        
+        Args:
+            image (np.ndarray):
+                Image to scale.
+            scale (float):
+                Scale to scale image with.
 
-        scaled = cv2.resize(crop_refined, (0, 0), fx=scale, fy=scale)
+        Returns:
+            np.ndarray:
+                Scaled image.
+        """
+        scaled = cv2.resize(image, (0, 0), fx=scale, fy=scale)
+        return scaled
 
+    def _process_crop(self, crop: np.ndarray) -> np.ndarray:
+        """Processes crop before reading text with easyocr.
+        
+        Args:
+            crop (np.ndarray):
+                Crop (representing the anonymized box) to be processed.
+        
+        Returns:
+            crop_processed (np.ndarray):
+                Processed crop.
+        """
         # Increase size of letters
-        dilated = cv2.dilate(scaled, np.ones((2, 2)))
+        dilated = cv2.dilate(crop, np.ones((2, 2)))
 
-        dilated_boundary = self._add_boundary(dilated)
+        dilated_boundary = self._add_boundary(dilated, padding=3)
 
         sharpened = (
             np.array(
                 skimage.filters.unsharp_mask(dilated_boundary, radius=20, amount=1.9),
                 dtype=np.uint8,
             )
-            * 255  # output of unsharp_mask is in range [0, 1], but we want [0, 255]
+            * 255  # Ensure range is [0, 255]
         )
         crop_processed = sharpened
         return crop_processed
@@ -1330,7 +1375,8 @@ class PDFTextReader:
                 anonymized_box_refined = self._refine_anonymized_box(
                     anonymized_box, image
                 )
-                anonymized_boxes.append(anonymized_box_refined)
+                if anonymized_box_refined:
+                    anonymized_boxes.append(anonymized_box_refined)
             else:
                 # Blob is not a bounding box.
                 pass
