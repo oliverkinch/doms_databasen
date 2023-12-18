@@ -228,7 +228,7 @@ class PDFTextReader:
             underlines (List[tuple]):
                 List of underlines with coordinates.
         """
-        (anonymized_boxes_underlines, underlines,) = self._line_anonymization_to_boxes(
+        anonymized_boxes_underlines, underlines = self._line_anonymization_to_boxes(
             image=image.copy(),
         )
 
@@ -547,7 +547,7 @@ class PDFTextReader:
         return split_indices
 
     @staticmethod
-    def _get_blobs(binary: np.ndarray) -> list:
+    def _get_blobs(binary: np.ndarray, sort_function=None) -> list:
         """Get blobs from binary image.
 
         Find all blobs in a binary image, and return the
@@ -561,10 +561,12 @@ class PDFTextReader:
             blobs (list):
                 List of blobs sorted by area of its bounding box.
         """
+        if sort_function is None:
+            sort_function = lambda blob: blob.area_bbox
 
         labels = measure.label(binary, connectivity=1)
         blobs = measure.regionprops(labels)
-        blobs = sorted(blobs, key=lambda blob: blob.area_bbox, reverse=True)
+        blobs = sorted(blobs, key=sort_function, reverse=True)
         return blobs
 
     def _line_anonymization_to_boxes(self, image: np.ndarray) -> tuple:
@@ -598,7 +600,8 @@ class PDFTextReader:
         dilated = cv2.dilate(eroded, np.ones((1, 50)), iterations=1)
 
         # Binarize and locate blobs
-        binary = self._binarize(image=dilated, threshold=200)
+        binary = self._binarize(image=dilated, threshold=200, val_min=0, val_max=255)
+
         blobs = self._get_blobs(binary)
 
         anonymized_boxes = []
@@ -620,7 +623,8 @@ class PDFTextReader:
                 box_col_max = col_max - p
 
                 anonymized_box = {
-                    "coordinates": [box_row_min, box_col_min, box_row_max, box_col_max]
+                    "coordinates": [box_row_min, box_col_min, box_row_max, box_col_max],
+                    "origin": "underline"
                 }
 
 
@@ -629,8 +633,10 @@ class PDFTextReader:
                     # Box is empty
                     continue
 
+                image_for_refinement = self._remove_underline_before_refinement(inverted=inverted, blob=blob)
+
                 anonymized_box_refined = self._refine_anonymized_box(
-                    anonymized_box=anonymized_box, image=inverted
+                    anonymized_box=anonymized_box, image=image_for_refinement, binary=None
                 )
 
                 if anonymized_box_refined:
@@ -648,6 +654,30 @@ class PDFTextReader:
                     underlines.append(blob.bbox)
 
         return anonymized_boxes, underlines
+
+    def _remove_underline_before_refinement(self, inverted:np.ndarray, blob:RegionProperties) -> np.ndarray:
+        row_min, col_min, row_max, col_max = blob.bbox
+        image_for_refinement = inverted.copy()
+        image_for_refinement[row_min:row_max, col_min:col_max] = 0
+        return image_for_refinement
+
+    def _make_split_between_overlapping_box_and_line(self, binary: np.ndarray) -> np.ndarray:
+        edges = self._get_vertical_edges(binary=binary)
+        sort_function = lambda blob: blob.bbox[2] - blob.bbox[0]
+        edge_blobs = self._get_blobs(binary=edges, sort_function=sort_function)
+        heights = []
+
+        for blob in edge_blobs:
+            row_min, col_min, row_max, col_max = blob.bbox
+            height = row_max - row_min
+            if height < 30:
+                break
+            heights.append(height)
+ 
+            row_min, col_min, row_max, col_max = blob.bbox
+            p = 10
+            binary[row_min - p:row_max + p, col_min:col_max] = 0
+        return binary
 
     def _too_much_overlap(self, box_1: dict, box_2: dict) -> bool:
         """Used to determine if two boxes overlap too much.
@@ -881,7 +911,7 @@ class PDFTextReader:
             seed_point = (row_min, col_min)
             # Remove underline
             filled[
-                row_min - pad : row_max + 1 + pad, col_min - pad : col_max + 1 + pad
+                row_min - pad : row_max + pad, col_min - pad : col_max + pad
             ] = 0
 
         # Remove tables
@@ -926,7 +956,7 @@ class PDFTextReader:
         """
         for box in anonymized_boxes:
             row_min, col_min, row_max, col_max = box["coordinates"]
-            image[row_min : row_max + 1, col_min : col_max + 1] = 0
+            image[row_min : row_max, col_min : col_max] = 0
         return image
 
     def _remove_tables(self, image: np.ndarray, table_boxes: List[dict]) -> np.ndarray:
@@ -1159,7 +1189,7 @@ class PDFTextReader:
 
         row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
 
-        crop = image[row_min : row_max + 1, col_min : col_max + 1]
+        crop = image[row_min : row_max, col_min : col_max]
 
         # Make a box for each word in the box
         # I get better results with easyocr using this approach.
@@ -1170,11 +1200,16 @@ class PDFTextReader:
         # E.g. the first box will contain the first word of `anonymized_box`.
         for anonymized_box_ in anonymized_boxes:
             row_min, col_min, row_max, col_max = anonymized_box_["coordinates"]
-            crop = image[row_min : row_max + 1, col_min : col_max + 1]
+            crop = image[row_min : row_max, col_min : col_max]
 
             # If length of box is short, then there are probably only a few letters in the box.
             # In this case, scale the image up.
-
+            if crop.sum() == 0:
+                # `_split_box` might output boxes that are empty.
+                # Could change `_split_box` such that it doesn't output empty boxes,
+                # such that this if statement is not needed.
+                texts.append("")
+                continue
             crop_processed = self._process_crop_before_read(crop)
 
             # Read text from image with easyocr
@@ -1274,7 +1309,7 @@ class PDFTextReader:
 
         sharpened = (
             np.array(
-                skimage.filters.unsharp_mask(dilated_boundary, radius=20, amount=1.9),
+                skimage.filters.unsharp_mask(dilated_boundary, radius=20, amount=1.8),
                 dtype=np.uint8,
             )
             * 255  # Ensure range is [0, 255]
@@ -1324,7 +1359,6 @@ class PDFTextReader:
             List[dict]:
                 List of anonymized boxes.
         """
-        # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
         # Mean filter to make text outside boxes
         # brigther than color of boxes.
@@ -1343,11 +1377,12 @@ class PDFTextReader:
         # Split them into separate boxes.
         inverted_boxes_split = self._split_boxes_in_image(inverted=inverted.copy())
 
-        # (`inverted` is an inverted binary image).
-        blobs = self._get_blobs(binary=inverted_boxes_split)
+        binary_splitted = self._make_split_between_overlapping_box_and_line(binary=inverted_boxes_split)
+        binary_splitted_inverted = cv2.bitwise_not(binary_splitted)
+
+        blobs = self._get_blobs(binary=binary_splitted)
 
         anonymized_boxes = []
-        heights = []
         for blob in blobs:
             if blob.area_bbox < self.config.box_area_min:
                 # Blob is too small to be considered an anonymized box.
@@ -1355,7 +1390,6 @@ class PDFTextReader:
             row_min, col_min, row_max, col_max = blob.bbox
 
             box_height = row_max - row_min
-            heights.append(box_height)
 
             if (
                 blob.area_filled / blob.area_bbox > self.config.box_accept_ratio
@@ -1365,22 +1399,22 @@ class PDFTextReader:
 
                 # `row_max - slight_shift_to_bottom` as text is usually in the top of the box.
                 anonymized_box = {
-                    "coordinates": (
+                    "coordinates": [
                         row_min,
                         col_min,
                         row_max - self.config.slight_shift_to_bottom,
                         col_max,
-                    )
+                    ],
+                    "origin": "box"
                 }
                 anonymized_box_refined = self._refine_anonymized_box(
-                    anonymized_box, image
+                    anonymized_box=anonymized_box, image=image, binary=binary_splitted_inverted
                 )
                 if anonymized_box_refined:
                     anonymized_boxes.append(anonymized_box_refined)
             else:
                 # Blob is not a bounding box.
                 pass
-
         return anonymized_boxes
 
     def _split_boxes_in_image(self, inverted: np.ndarray) -> np.ndarray:
@@ -1470,6 +1504,12 @@ class PDFTextReader:
         edges_h = np.abs(edges_h)
         edges_h = np.array(edges_h * 255, dtype=np.uint8)
         return edges_h
+    
+    def _get_vertical_edges(self, binary: np.ndarray) -> np.ndarray:
+        edges_v = skimage.filters.sobel_v(binary)
+        edges_v = np.abs(edges_v)
+        edges_v = np.array(edges_v * 255, dtype=np.uint8)
+        return edges_v
 
     def _has_neighboring_white_pixels(self, a: np.ndarray, b: np.ndarray) -> bool:
         """Checks if two arrays have neighboring white pixels.
@@ -1629,7 +1669,7 @@ class PDFTextReader:
         row_min, _, row_max, _ = blob.bbox
         return row_min < image_midpoint < row_max
 
-    def _refine_anonymized_box(self, anonymized_box: dict, image: np.ndarray) -> dict:
+    def _refine_anonymized_box(self, anonymized_box: dict, image: np.ndarray, binary: np.ndarray) -> dict:
         """Refines bounding box.
 
         Two scenarios:
@@ -1641,31 +1681,32 @@ class PDFTextReader:
                 Anonymized box with coordinates.
             image (np.ndarray):
                 Image of the current page.
+            binary (np.ndarray):
+                Binary image where boxes are black and text in boxes are white.
 
         Returns:
             anonymized_box (dict):
                 Anonymized box with refined coordinates.
         """
-        # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-        binary = self._binarize(
-            image=image, threshold=self.config.threshold_binarize_refine_anonymized_box
-        )
+        if binary is None:
+            binary = self._binarize(
+                image=image,
+                threshold=self.config.threshold_binarize_refine_anonymized_box,
+                val_min=0,
+                val_max=255,
+            )
 
         row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
 
-        # +1 as slice is exclusive and box coordinates are inclusive.
-        crop = image[row_min : row_max + 1, col_min : col_max + 1]
+        crop = image[row_min : row_max, col_min : col_max ]
+        crop_binary = binary[row_min : row_max, col_min : col_max ]
 
         # If empty/black box, box should be ignored
         if crop.sum() == 0:
             return {}
 
-        crop_binary = self._binarize(
-            image=crop, threshold=self.config.threshold_binarize_refine_anonymized_box
-        )
-        crop_binary_ = self._remove_boundary_noise(binary_crop=crop_binary.copy())
-        binary[row_min : row_max + 1, col_min : col_max + 1] = crop_binary_
+        crop_binary_cleaned = self._remove_boundary_noise(binary_crop=crop_binary.copy())
+        binary[row_min : row_max, col_min : col_max] = crop_binary_cleaned
 
         # Refine box
         anonymized_box = self._refine(binary=binary, anonymized_box=anonymized_box)
@@ -1684,11 +1725,12 @@ class PDFTextReader:
             anonymized_box (tuple):
                 Tuple with refined coordinates given by min/max row/col of box.
         """
-
+        anonymized_box_copy = anonymized_box.copy()
+        self.b = binary
         row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
 
         # Rows from top
-        row = binary[row_min, col_min : col_max + 1]
+        row = binary[row_min, col_min: col_max]
         if not row.sum() == 0:
             anonymized_box = self._refine_(
                 top_bottom_left_right="top",
@@ -1707,7 +1749,8 @@ class PDFTextReader:
         row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
 
         # Rows from bottom
-        row = binary[row_max, col_min : col_max + 1]
+        # `row_max - 1` box coordinates are exclusive: [row_min, row_max)
+        row = binary[row_max - 1, col_min:col_max]
         if not row.sum() == 0:
             anonymized_box = self._refine_(
                 top_bottom_left_right="bottom",
@@ -1726,7 +1769,7 @@ class PDFTextReader:
         row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
 
         # Columns from left
-        col = binary[row_min : row_max + 1, col_min]
+        col = binary[row_min : row_max, col_min]
         if not col.sum() == 0:
             anonymized_box = self._refine_(
                 top_bottom_left_right="left",
@@ -1745,7 +1788,8 @@ class PDFTextReader:
         row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
 
         # Columns from right
-        col = binary[row_min : row_max + 1, col_max]
+        # `col_max - 1` box coordinates are exclusive: [col_min, col_max)
+        col = binary[row_min : row_max, col_max - 1]
         if not col.sum() == 0:
             anonymized_box = self._refine_(
                 top_bottom_left_right="right",
@@ -1808,18 +1852,21 @@ class PDFTextReader:
                 expand_steps_counter += 1
             row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
 
-            # Undo last change, because while loop has gone one step too far.
-            if top_bottom_left_right == "top":
-                row_min += 1
-            elif top_bottom_left_right == "bottom":
-                row_max -= 1
-            elif top_bottom_left_right == "left":
-                col_min += 1
-            elif top_bottom_left_right == "right":
-                col_max -= 1
+            if self._not_only_white(row_col_next):
+                # While loop stopped because last row/column was not only white.
+                # This means that the box should be shrunk by one step.
+                if top_bottom_left_right == "top":
+                    row_min += 1
+                elif top_bottom_left_right == "bottom":
+                    row_max -= 1
+                elif top_bottom_left_right == "left":
+                    col_min += 1
+                elif top_bottom_left_right == "right":
+                    col_max -= 1
             anonymized_box["coordinates"] = [row_min, col_min, row_max, col_max]
 
         else:
+            # Just use np.where here instead. TODO
             row_col_next, _, anonymized_box = self._next_row_col(
                 top_bottom_left_right=top_bottom_left_right,
                 expanding=False,
@@ -1866,29 +1913,29 @@ class PDFTextReader:
         """
         row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
         if top_bottom_left_right == "top":
-            row_col = binary[row_min, col_min : col_max + 1]
+            row_col = binary[row_min, col_min : col_max]
 
             change = -1 if expanding else 1
             row_min += change
-            row_col_next = binary[row_min, col_min : col_max + 1]
+            row_col_next = binary[row_min, col_min : col_max]
         elif top_bottom_left_right == "bottom":
-            row_col = binary[row_max, col_min : col_max + 1]
+            row_col = binary[row_max - 1, col_min : col_max]
 
             change = 1 if expanding else -1
             row_max += change
-            row_col_next = binary[row_max, col_min : col_max + 1]
+            row_col_next = binary[row_max - 1, col_min : col_max]
         elif top_bottom_left_right == "left":
-            row_col = binary[row_min : row_max + 1, col_min]
+            row_col = binary[row_min : row_max, col_min]
 
             change = -1 if expanding else 1
             col_min += change
-            row_col_next = binary[row_min : row_max + 1, col_min]
+            row_col_next = binary[row_min : row_max, col_min]
         elif top_bottom_left_right == "right":
-            row_col = binary[row_min : row_max + 1, col_max]
+            row_col = binary[row_min : row_max, col_max - 1]
 
             change = 1 if expanding else -1
             col_max += change
-            row_col_next = binary[row_min : row_max + 1, col_max]
+            row_col_next = binary[row_min : row_max, col_max - 1]
 
         anonymized_box["coordinates"] = [row_min, col_min, row_max, col_max]
         return row_col_next, row_col, anonymized_box
@@ -1914,7 +1961,8 @@ class PDFTextReader:
 
             row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
             first_box = {
-                "coordinates": (row_min, col_min, row_max, col_min + split_indices[0])
+                "coordinates": [row_min, col_min, row_max, col_min + split_indices[0]],
+                "origin": "box"
             }
 
             anonymized_boxes.append(first_box)
@@ -1926,23 +1974,25 @@ class PDFTextReader:
                     split_indices[:-1], split_indices[1:]
                 ):
                     anonymized_box_ = {
-                        "coordinates": (
+                        "coordinates": [
                             row_min,
                             col_min + split_index_1 + 1,
                             row_max,
                             col_min + split_index_2,
-                        )
+                        ],
+                        "origin": "box"
                     }
                     anonymized_boxes.append(anonymized_box_)
 
             # Get last box
             last_box = {
-                "coordinates": (
+                "coordinates": [
                     row_min,
                     col_min + split_indices[-1] + 1,
                     row_max,
                     col_max,
-                )
+                ],
+                "origin": "box"
             }
             anonymized_boxes.append(last_box)
         return anonymized_boxes
@@ -2109,6 +2159,6 @@ def draw_box(image, box, pixel_value=0):
         # blob
         row_min, col_min, row_max, col_max = box.bbox
 
-    image[row_min : row_max + 1, col_min : col_max + 1] = pixel_value
+    image[row_min : row_max, col_min : col_max] = pixel_value
 
     save_cv2_image_tmp(image)
