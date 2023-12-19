@@ -114,7 +114,7 @@ def test_get_text_from_boxes(pdf_text_reader, boxes, text_expected):
             "tests/data/processor/get_text_from_box_3.png",
             {"coordinates": [886, 1952, 925, 2202]},
             False,
-            "<anonym>Person 5 (P5)</anonym>"
+            "<anonym>Person 5 (P5)</anonym>",
         ),
     ],
 )
@@ -169,7 +169,7 @@ def test_remove_boundary_noise(pdf_text_reader, image_path):
             "tests/data/processor/page_with_boxes_2.png",
             {"coordinates": [885, 1884, 944, 2271]},
             {"coordinates": [886, 1952, 926, 2203]},
-        )
+        ),
     ],
 )
 def test_refine_anonymized_box(
