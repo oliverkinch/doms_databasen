@@ -63,7 +63,6 @@ underline_height_lower_bound: 1
 underline_height_upper_bound: 7
 underline_remove_pad: 1
 underline_box_height: 50
-underline_box_padding: 5
 
 line_start_ignore_col: 1200
 line_start_ignore_row: 3000
@@ -131,7 +130,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "2472"
+  case_id: "2552"
   all: False
   messages:
     give_correct_input: >

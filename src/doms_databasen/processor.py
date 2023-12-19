@@ -80,8 +80,8 @@ class Processor(PDFTextReader):
         text_anonymized, text_tika = self.extract_text(
             pdf_path=pdf_path,
         )
-
-        processed_data["text_anon_tagged"] = text_anonymized
+        if text_anonymized is not None:
+            processed_data["text_anon_tagged"] = text_anonymized
         if text_tika is not None:
             # If a PDF has underline anonymization, we use
             # the text extracted with Tika, instead of replacing

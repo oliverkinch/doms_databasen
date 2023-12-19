@@ -121,9 +121,9 @@ class PDFTextReader:
                 )
                 if not box_anonymization and not underline_anonymization:
                     logger.info(self.config.message_try_use_tika)
-                    pdf_text = self._read_text_with_tika(pdf_path=str(pdf_path))
-                    if pdf_text:
-                        return pdf_text
+                    text_tika = self._read_text_with_tika(pdf_path=str(pdf_path))
+                    if text_tika:
+                        return None, text_tika
                     else:
                         logger.info(self.config.message_tika_failed)
                         # I have not seen a PDF where tika is not able
@@ -594,7 +594,6 @@ class PDFTextReader:
         )
 
         # Grayscale and invert, such that underlines are white.
-        # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         inverted = cv2.bitwise_not(image)
 
         # Morphological opening.
@@ -617,13 +616,12 @@ class PDFTextReader:
 
             height = row_max - row_min
             if blob.area == blob.area_bbox and lb < height < ub:
-                p = self.config.underline_box_padding
                 box_row_min = (
                     row_min - self.config.underline_box_height
-                )  # Give box a height of 50 pixels
+                )
                 box_row_max = row_min - 1  # Just above underline
-                box_col_min = col_min + p  # Avoid ,) etc. Box will be refined later.
-                box_col_max = col_max - p
+                box_col_min = col_min
+                box_col_max = col_max
 
                 anonymized_box = {
                     "coordinates": [box_row_min, box_col_min, box_row_max, box_col_max],
@@ -634,40 +632,16 @@ class PDFTextReader:
                 if crop.sum() == 0:
                     # Box is empty
                     continue
+                underlines.append(blob.bbox)
 
-                image_for_refinement = self._remove_underline_before_refinement(
-                    inverted=inverted, blob=blob
-                )
-
-                anonymized_box_refined = self._refine_anonymized_box(
-                    anonymized_box=anonymized_box,
-                    image=image_for_refinement,
-                    binary=None,
-                )
-
-                if anonymized_box_refined:
-                    # Some anonymizations have two underlines, which
-                    # results in two boxes overlapping.
-                    box_is_duplicate = any(
-                        self._too_much_overlap(box_1=anonymized_box_refined, box_2=box)
+                box_is_duplicate = any(
+                        self._too_much_overlap(box_1=anonymized_box, box_2=box)
                         for box in anonymized_boxes
                     )
-                    # Only store boxes that are not duplicates
-                    if not box_is_duplicate:
-                        anonymized_boxes.append(anonymized_box_refined)
-
-                    # Store all underlines, so that they can be removed from the image later.
-                    underlines.append(blob.bbox)
+                if not box_is_duplicate:
+                    anonymized_boxes.append(anonymized_box)
 
         return anonymized_boxes, underlines
-
-    def _remove_underline_before_refinement(
-        self, inverted: np.ndarray, blob: RegionProperties
-    ) -> np.ndarray:
-        row_min, col_min, row_max, col_max = blob.bbox
-        image_for_refinement = inverted.copy()
-        image_for_refinement[row_min:row_max, col_min:col_max] = 0
-        return image_for_refinement
 
     def _make_split_between_overlapping_box_and_line(
         self, binary: np.ndarray
@@ -1264,9 +1238,10 @@ class PDFTextReader:
 
         scale = self._get_scale(box_length)
         crop_scaled = self._scale_image(image=crop_refined, scale=scale)
-        crop_boundary = self._add_boundary(crop_scaled, padding=2)
-        crop_to_read = crop_boundary
+        crop_to_read = crop_scaled
         return crop_to_read
+
+
 
     def _get_scale(self, box_length: int) -> float:
         """Get scale to scale box/crop with.
@@ -1382,23 +1357,29 @@ class PDFTextReader:
             ):
                 assert 40 < box_height < 80, "Box height is not in expected range?"
 
-                # `row_max - slight_shift_to_bottom` as text is usually in the top of the box.
                 anonymized_box = {
-                    "coordinates": [
-                        row_min,
-                        col_min,
-                        row_max - self.config.slight_shift_to_bottom,
-                        col_max,
-                    ],
+                    "coordinates": [row_min, col_min, row_max, col_max],
                     "origin": "box",
                 }
-                anonymized_box_refined = self._refine_anonymized_box(
-                    anonymized_box=anonymized_box,
-                    image=image,
-                    binary=binary_splitted_inverted,
-                )
-                if anonymized_box_refined:
-                    anonymized_boxes.append(anonymized_box_refined)
+                anonymized_boxes.append(anonymized_box)
+
+                # # `row_max - slight_shift_to_bottom` as text is usually in the top of the box.
+                # anonymized_box = {
+                #     "coordinates": [
+                #         row_min,
+                #         col_min,
+                #         row_max - self.config.slight_shift_to_bottom,
+                #         col_max,
+                #     ],
+                #     "origin": "box",
+                # }
+                # anonymized_box_refined = self._refine_anonymized_box(
+                #     anonymized_box=anonymized_box,
+                #     image=image,
+                #     binary=binary_splitted_inverted,
+                # )
+                # if anonymized_box_refined:
+                #     anonymized_boxes.append(anonymized_box_refined)
             else:
                 # Blob is not a bounding box.
                 pass
@@ -1655,320 +1636,6 @@ class PDFTextReader:
         image_midpoint = binary_crop.shape[0] // 2
         row_min, _, row_max, _ = blob.bbox
         return row_min < image_midpoint < row_max
-
-    def _refine_anonymized_box(
-        self, anonymized_box: dict, image: np.ndarray, binary: np.ndarray
-    ) -> dict:
-        """Refines bounding box.
-
-        Two scenarios:
-            1. The box is too big, i.e. there is too much black space around the text.
-            2. The box is too small, i.e. some letters are not fully included in the box.
-
-        Args:
-            anonymized_box (dict):
-                Anonymized box with coordinates.
-            image (np.ndarray):
-                Image of the current page.
-            binary (np.ndarray):
-                Binary image where boxes are black and text in boxes are white.
-
-        Returns:
-            anonymized_box (dict):
-                Anonymized box with refined coordinates.
-        """
-        if binary is None:
-            binary = self._binarize(
-                image=image,
-                threshold=self.config.threshold_binarize_refine_anonymized_box,
-                val_min=0,
-                val_max=255,
-            )
-
-        row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
-
-        crop = image[row_min:row_max, col_min:col_max]
-        crop_binary = binary[row_min:row_max, col_min:col_max]
-
-        # If empty/black box, box should be ignored
-        if crop.sum() == 0:
-            return {}
-        if crop_binary.sum() == 0:
-            return {}
-        crop_binary_cleaned = self._remove_boundary_noise(
-            binary_crop=crop_binary.copy()
-        )
-        binary[row_min:row_max, col_min:col_max] = crop_binary_cleaned
-
-        # Refine box
-        anonymized_box = self._refine(binary=binary, anonymized_box=anonymized_box)
-        return anonymized_box
-
-    def _refine(self, binary: np.ndarray, anonymized_box: dict) -> dict:
-        """Refines bounding box.
-
-        Args:
-            binary (np.ndarray):
-                Binary image of the current page.
-            anonymized_box (dict):
-                Anonymized box with coordinates.
-
-        Returns:
-            anonymized_box (dict):
-                Anonymized box with refined coordinates.
-        """
-        anonymized_box_copy = anonymized_box.copy()
-        row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
-
-        # Rows from top
-        row = binary[row_min, col_min:col_max]
-        if self._row_col_has_white_pixels(row_col=row):
-            anonymized_box = self._expand_box(
-                top_bottom_left_right="top",
-                expanding=True,
-                binary=binary,
-                anonymized_box=anonymized_box,
-            )
-        else:
-            anonymized_box = self._shrink_box(
-                anonymized_box=anonymized_box,
-                top_bottom_left_right="top",
-                binary=binary,
-            )
-
-        row_min = anonymized_box["coordinates"][0]
-
-        # Rows from bottom
-        # `row_max - 1` box coordinates are exclusive: [row_min, row_max)
-        row = binary[row_max - 1, col_min:col_max]
-        if self._row_col_has_white_pixels(row_col=row):
-            anonymized_box = self._expand_box(
-                top_bottom_left_right="bottom",
-                expanding=True,
-                binary=binary,
-                anonymized_box=anonymized_box,
-            )
-        else:
-            anonymized_box = self._shrink_box(
-                anonymized_box=anonymized_box,
-                top_bottom_left_right="bottom",
-                binary=binary,
-            )
-
-        row_max = anonymized_box["coordinates"][2]
-
-        # Columns from left
-        col = binary[row_min:row_max, col_min]
-        if self._row_col_has_white_pixels(row_col=col):
-            anonymized_box = self._expand_box(
-                top_bottom_left_right="left",
-                expanding=True,
-                binary=binary,
-                anonymized_box=anonymized_box,
-            )
-        else:
-            anonymized_box = self._shrink_box(
-                anonymized_box=anonymized_box,
-                top_bottom_left_right="left",
-                binary=binary,
-            )
-
-        col_min = anonymized_box["coordinates"][1]
-
-        # Columns from right
-        # `col_max - 1` box coordinates are exclusive: [col_min, col_max)
-        col = binary[row_min:row_max, col_max - 1]
-        if self._row_col_has_white_pixels(row_col=col):
-            anonymized_box = self._expand_box(
-                top_bottom_left_right="right",
-                expanding=True,
-                binary=binary,
-                anonymized_box=anonymized_box,
-            )
-        else:
-            anonymized_box = self._shrink_box(
-                anonymized_box=anonymized_box,
-                top_bottom_left_right="right",
-                binary=binary,
-            )
-
-        return anonymized_box
-
-    def _shrink_box(
-        self, anonymized_box: dict, top_bottom_left_right: str, binary: np.ndarray
-    ) -> dict:
-        """Shrinks bounding box in one direction.
-
-        Args:
-            anonymized_box (dict):
-                Anonymized box with coordinates.
-            top_bottom_left_right (str):
-                String indicating which direction to shrink.
-            binary (np.ndarray):
-                Binary image of the current page.
-
-        Returns:
-            anonymized_box (dict):
-                Anonymized box with coordinates shrunk in one direction.
-        """
-        row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
-        binary_crop = binary[row_min:row_max, col_min:col_max]
-
-        if top_bottom_left_right == "top":
-            rows, _ = np.where(binary_crop > 0)
-            row_min += rows.min()
-            anonymized_box["coordinates"][0] = row_min
-
-        elif top_bottom_left_right == "bottom":
-            n_rows = row_max - row_min
-            rows, _ = np.where(binary_crop > 0)
-            row_max = (
-                row_max - (n_rows - rows.max()) + 1
-            )  # +1 to make row_max exclusive
-            anonymized_box["coordinates"][2] = row_max
-
-        elif top_bottom_left_right == "left":
-            _, cols = np.where(binary_crop > 0)
-            col_min += cols.min()
-            anonymized_box["coordinates"][1] = col_min
-
-        elif top_bottom_left_right == "right":
-            n_cols = col_max - col_min
-            _, cols = np.where(binary_crop > 0)
-            col_max = col_max - (n_cols - cols.max()) + 1
-            anonymized_box["coordinates"][3] = col_max
-
-        return anonymized_box
-
-    def _row_col_has_white_pixels(self, row_col: np.ndarray) -> bool:
-        """Checks if row/column has white pixels.
-
-        Args:
-            row_col (np.ndarray):
-                Row/column of binary image.
-
-        Returns:
-            bool:
-                True if row/column has white pixels. False otherwise.
-        """
-        return row_col.sum() > 0
-
-    def _expand_box(
-        self,
-        top_bottom_left_right: str,
-        expanding: bool,
-        binary: np.ndarray,
-        anonymized_box: dict,
-    ) -> dict:
-        """Refines bounding box in one direction.
-
-        Args:
-            top_bottom_left_right (str):
-                String indicating which direction to refine.
-            expanding (bool):
-                Boolean indicating if the box should be expanded or shrunk.
-            binary (np.ndarray):
-                Binary image of the current page.
-            anonymized_box (tuple):
-                Tuple with coordinates given by min/max row/col of box.
-
-        Returns:
-            anonymized_box (tuple):
-                Tuple with refined coordinates given by min/max row/col of box.
-        """
-        row_col_next, row_col, anonymized_box = self._next_row_col(
-            top_bottom_left_right=top_bottom_left_right,
-            expanding=expanding,
-            binary=binary,
-            anonymized_box=anonymized_box,
-        )
-        expand_steps_counter = 0
-        while (
-            self._not_only_white(row_col_next)
-            and self._has_neighboring_white_pixels(row_col, row_col_next)
-            and expand_steps_counter <= self.config.max_expand_steps
-        ):
-            row_col_next, row_col, anonymized_box = self._next_row_col(
-                top_bottom_left_right=top_bottom_left_right,
-                expanding=expanding,
-                binary=binary,
-                anonymized_box=anonymized_box,
-            )
-            expand_steps_counter += 1
-        row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
-
-        if self._not_only_white(row_col_next):
-            # While loop stopped because last row/column was not only white.
-            # This means that the box should be shrunk by one step.
-            if top_bottom_left_right == "top":
-                row_min += 1
-            elif top_bottom_left_right == "bottom":
-                row_max -= 1
-            elif top_bottom_left_right == "left":
-                col_min += 1
-            elif top_bottom_left_right == "right":
-                col_max -= 1
-
-        anonymized_box["coordinates"] = [row_min, col_min, row_max, col_max]
-        return anonymized_box
-
-    @staticmethod
-    def _next_row_col(
-        top_bottom_left_right: str,
-        expanding: bool,
-        binary: np.ndarray,
-        anonymized_box: dict,
-    ) -> tuple:
-        """Helper function for _refine_.
-
-        This function is used to get the next row/column when refining a bounding box.
-
-        Args:
-            top_bottom_left_right (str):
-                String indicating which direction is being refined.
-            expanding (bool):
-                Boolean indicating if the box is being expanded or shrunk.
-            binary (np.ndarray):
-                Binary image of the current page.
-            anonymized_box (dict):
-                Anonymized box with coordinates.
-
-        Returns:
-            row_col_next (np.ndarray):
-                Next row/column.
-            row_col (np.ndarray):
-                Current row/column.
-            anonymized_box (dict):
-                Anonymized box with refined coordinates.
-        """
-        row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
-        if top_bottom_left_right == "top":
-            row_col = binary[row_min, col_min:col_max]
-
-            change = -1 if expanding else 1
-            row_min += change
-            row_col_next = binary[row_min, col_min:col_max]
-        elif top_bottom_left_right == "bottom":
-            row_col = binary[row_max - 1, col_min:col_max]
-
-            change = 1 if expanding else -1
-            row_max += change
-            row_col_next = binary[row_max - 1, col_min:col_max]
-        elif top_bottom_left_right == "left":
-            row_col = binary[row_min:row_max, col_min]
-
-            change = -1 if expanding else 1
-            col_min += change
-            row_col_next = binary[row_min:row_max, col_min]
-        elif top_bottom_left_right == "right":
-            row_col = binary[row_min:row_max, col_max - 1]
-
-            change = 1 if expanding else -1
-            col_max += change
-            row_col_next = binary[row_min:row_max, col_max - 1]
-
-        anonymized_box["coordinates"] = [row_min, col_min, row_max, col_max]
-        return row_col_next, row_col, anonymized_box
 
     def _split_box(self, crop: np.ndarray, anonymized_box: dict) -> List[dict]:
         """Split box into multiple boxes - one for each word.

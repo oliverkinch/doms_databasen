@@ -34,7 +34,9 @@ def pdf_text_reader(config):
     ],
 )
 def test_extract_text(pdf_text_reader, pdf_path, expected_text):
-    text = pdf_text_reader.extract_text(pdf_path=pdf_path)
+    text, text_tika = pdf_text_reader.extract_text(pdf_path=pdf_path)
+    if text is None:
+        text = text_tika
     assert text == expected_text
 
 
@@ -181,32 +183,6 @@ def test_remove_boundary_noise(pdf_text_reader, image_path):
     assert binary_image[0, :].sum() == 0
     assert binary_image[N - 1, :].sum() == 0
 
-
-@pytest.mark.parametrize(
-    "image_path, anonymized_box, anonymized_box_expected",
-    [
-        (
-            "tests/data/processor/page_with_boxes.png",
-            {"coordinates": [2757, 572, 2818, 809]},
-            {"coordinates": [2758, 623, 2790, 758]},
-        ),
-        (
-            "tests/data/processor/page_with_boxes_2.png",
-            {"coordinates": [885, 1884, 944, 2271]},
-            {"coordinates": [886, 1952, 926, 2203]},
-        ),
-    ],
-)
-def test_refine_anonymized_box(
-    pdf_text_reader, anonymized_box, image_path, anonymized_box_expected
-):
-    image = read_image(image_path)
-    anonymized_box = pdf_text_reader._refine_anonymized_box(
-        anonymized_box=anonymized_box, image=image, binary=None
-    )
-    assert anonymized_box["coordinates"] == anonymized_box_expected["coordinates"]
-
-
 @pytest.mark.parametrize(
     "image_path, n_splits_expected",
     [
@@ -284,4 +260,4 @@ def test_find_tables(pdf_text_reader, image_path, n_tables_expected):
 
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_read_text_from_anonymized_box"])
+    pytest.main([__file__ + "::test_line_anonymization_to_boxes"])
