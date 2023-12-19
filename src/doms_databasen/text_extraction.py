@@ -1726,88 +1726,109 @@ class PDFTextReader:
                 Tuple with refined coordinates given by min/max row/col of box.
         """
         anonymized_box_copy = anonymized_box.copy()
-        self.b = binary
         row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
 
         # Rows from top
         row = binary[row_min, col_min: col_max]
-        if not row.sum() == 0:
-            anonymized_box = self._refine_(
+        if self._row_col_has_white_pixels(row_col=row):
+            anonymized_box = self._expand_box(
                 top_bottom_left_right="top",
                 expanding=True,
                 binary=binary,
                 anonymized_box=anonymized_box,
             )
         else:
-            anonymized_box = self._refine_(
-                top_bottom_left_right="top",
-                expanding=False,
-                binary=binary,
-                anonymized_box=anonymized_box,
-            )
+            anonymized_box = self._shrink_box(anonymized_box=anonymized_box, top_bottom_left_right="top", binary=binary)
 
-        row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
+        row_min = anonymized_box["coordinates"][0]
 
         # Rows from bottom
         # `row_max - 1` box coordinates are exclusive: [row_min, row_max)
         row = binary[row_max - 1, col_min:col_max]
-        if not row.sum() == 0:
-            anonymized_box = self._refine_(
+        if self._row_col_has_white_pixels(row_col=row):
+            anonymized_box = self._expand_box(
                 top_bottom_left_right="bottom",
                 expanding=True,
                 binary=binary,
                 anonymized_box=anonymized_box,
             )
         else:
-            anonymized_box = self._refine_(
-                top_bottom_left_right="bottom",
-                expanding=False,
-                binary=binary,
-                anonymized_box=anonymized_box,
-            )
+            anonymized_box = self._shrink_box(anonymized_box=anonymized_box, top_bottom_left_right="bottom", binary=binary)
 
-        row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
+        row_max = anonymized_box["coordinates"][2]
 
         # Columns from left
         col = binary[row_min : row_max, col_min]
-        if not col.sum() == 0:
-            anonymized_box = self._refine_(
+        if self._row_col_has_white_pixels(row_col=col):
+            anonymized_box = self._expand_box(
                 top_bottom_left_right="left",
                 expanding=True,
                 binary=binary,
                 anonymized_box=anonymized_box,
             )
         else:
-            anonymized_box = self._refine_(
-                top_bottom_left_right="left",
-                expanding=False,
-                binary=binary,
-                anonymized_box=anonymized_box,
-            )
+            anonymized_box = self._shrink_box(anonymized_box=anonymized_box, top_bottom_left_right="left", binary=binary)
 
-        row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
+        col_min = anonymized_box["coordinates"][1]
 
         # Columns from right
         # `col_max - 1` box coordinates are exclusive: [col_min, col_max)
         col = binary[row_min : row_max, col_max - 1]
-        if not col.sum() == 0:
-            anonymized_box = self._refine_(
+        if self._row_col_has_white_pixels(row_col=col):
+            anonymized_box = self._expand_box(
                 top_bottom_left_right="right",
                 expanding=True,
                 binary=binary,
                 anonymized_box=anonymized_box,
             )
         else:
-            anonymized_box = self._refine_(
-                top_bottom_left_right="right",
-                expanding=False,
-                binary=binary,
-                anonymized_box=anonymized_box,
-            )
+            anonymized_box = self._shrink_box(anonymized_box=anonymized_box, top_bottom_left_right="right", binary=binary)
 
         return anonymized_box
+    
+    def _shrink_box(self, anonymized_box: dict, top_bottom_left_right: str, binary: np.ndarray) -> dict:
+            row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
+            binary_crop = binary[row_min:row_max, col_min:col_max]
 
-    def _refine_(
+            if top_bottom_left_right == "top":
+                rows, _ = np.where(binary_crop > 0)
+                row_min += rows.min()
+                anonymized_box["coordinates"][0] = row_min
+
+            elif top_bottom_left_right == "bottom":
+                n_rows = row_max - row_min
+                rows, _ = np.where(binary_crop > 0)
+                row_max = row_max - (n_rows - rows.max()) + 1 # +1 to make row_max exclusive
+                anonymized_box["coordinates"][2] = row_max
+
+            elif top_bottom_left_right == "left":
+                _, cols = np.where(binary_crop > 0)
+                col_min += cols.min()
+                anonymized_box["coordinates"][1] = col_min
+
+            elif top_bottom_left_right == "right":
+                n_cols = col_max - col_min
+                _, cols = np.where(binary_crop > 0)
+                col_max = col_max - (n_cols - cols.max()) + 1
+                anonymized_box["coordinates"][3] = col_max
+
+            return anonymized_box
+
+
+    def _row_col_has_white_pixels(self, row_col: np.ndarray) -> bool:
+        """Checks if row/column has white pixels.
+
+        Args:
+            row_col (np.ndarray):
+                Row/column of binary image.
+
+        Returns:
+            bool:
+                True if row/column has white pixels. False otherwise.
+        """
+        return row_col.sum() > 0
+
+    def _expand_box(
         self,
         top_bottom_left_right: str,
         expanding: bool,
@@ -1830,56 +1851,40 @@ class PDFTextReader:
             anonymized_box (tuple):
                 Tuple with refined coordinates given by min/max row/col of box.
         """
-        if expanding:
+        row_col_next, row_col, anonymized_box = self._next_row_col(
+            top_bottom_left_right=top_bottom_left_right,
+            expanding=expanding,
+            binary=binary,
+            anonymized_box=anonymized_box,
+        )
+        expand_steps_counter = 0
+        while (
+            self._not_only_white(row_col_next)
+            and self._has_neighboring_white_pixels(row_col, row_col_next)
+            and expand_steps_counter <= self.config.max_expand_steps
+        ):
             row_col_next, row_col, anonymized_box = self._next_row_col(
                 top_bottom_left_right=top_bottom_left_right,
                 expanding=expanding,
                 binary=binary,
                 anonymized_box=anonymized_box,
             )
-            expand_steps_counter = 0
-            while (
-                self._not_only_white(row_col_next)
-                and self._has_neighboring_white_pixels(row_col, row_col_next)
-                and expand_steps_counter <= self.config.max_expand_steps
-            ):
-                row_col_next, row_col, anonymized_box = self._next_row_col(
-                    top_bottom_left_right=top_bottom_left_right,
-                    expanding=expanding,
-                    binary=binary,
-                    anonymized_box=anonymized_box,
-                )
-                expand_steps_counter += 1
-            row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
+            expand_steps_counter += 1
+        row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
 
-            if self._not_only_white(row_col_next):
-                # While loop stopped because last row/column was not only white.
-                # This means that the box should be shrunk by one step.
-                if top_bottom_left_right == "top":
-                    row_min += 1
-                elif top_bottom_left_right == "bottom":
-                    row_max -= 1
-                elif top_bottom_left_right == "left":
-                    col_min += 1
-                elif top_bottom_left_right == "right":
-                    col_max -= 1
-            anonymized_box["coordinates"] = [row_min, col_min, row_max, col_max]
+        if self._not_only_white(row_col_next):
+            # While loop stopped because last row/column was not only white.
+            # This means that the box should be shrunk by one step.
+            if top_bottom_left_right == "top":
+                row_min += 1
+            elif top_bottom_left_right == "bottom":
+                row_max -= 1
+            elif top_bottom_left_right == "left":
+                col_min += 1
+            elif top_bottom_left_right == "right":
+                col_max -= 1
 
-        else:
-            # Just use np.where here instead. TODO
-            row_col_next, _, anonymized_box = self._next_row_col(
-                top_bottom_left_right=top_bottom_left_right,
-                expanding=False,
-                binary=binary,
-                anonymized_box=anonymized_box,
-            )
-            while row_col_next.sum() == 0:
-                row_col_next, _, anonymized_box = self._next_row_col(
-                    top_bottom_left_right=top_bottom_left_right,
-                    expanding=False,
-                    binary=binary,
-                    anonymized_box=anonymized_box,
-                )
+        anonymized_box["coordinates"] = [row_min, col_min, row_max, col_max]
         return anonymized_box
 
     @staticmethod
