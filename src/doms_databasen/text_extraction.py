@@ -96,8 +96,9 @@ class PDFTextReader:
             anonymized_boxes = []
             if box_anonymization:
                 anonymized_boxes = self._extract_anonymized_boxes(image)
+                box_anonymization = bool(anonymized_boxes)
+                underline_anonymization = not bool(anonymized_boxes)
 
-            # Underline anonymization
             anonymized_boxes_underlines = []
             underlines = []
             if underline_anonymization:
@@ -382,7 +383,7 @@ class PDFTextReader:
         row_min, col_min, row_max, col_max = cell_box["coordinates"]
 
         crop = inverted[row_min:row_max, col_min:col_max]
-        binary = self._binarize(image=crop, threshold=100)
+        binary = self._binarize(image=crop, threshold=self.config.threshold_binarize_empty_box)
         if binary.sum() == 0:
             cell.value = ""
             return
@@ -821,9 +822,8 @@ class PDFTextReader:
             np.ndarray:
                 Processed top part.
         """
-        # page_top_gray = cv2.cvtColor(page_top, cv2.COLOR_BGR2GRAY)
         logo_binary = self._binarize(
-            image=page_top, threshold=230, val_min=0, val_max=255
+            image=page_top, threshold=self.config.threshold_binarize_top_page, val_min=0, val_max=255
         )
         inverted = cv2.bitwise_not(logo_binary)
         return inverted
@@ -1192,6 +1192,13 @@ class PDFTextReader:
         if invert:
             image = cv2.bitwise_not(image)
 
+        image_binary = self._binarize(
+            image=image,
+            threshold=self.config.threshold_binarize_empty_box,
+            val_min=0,
+            val_max=255,
+        )
+
         row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
 
         crop = image[row_min:row_max, col_min:col_max]
@@ -1205,16 +1212,16 @@ class PDFTextReader:
         # E.g. the first box will contain the first word of `anonymized_box`.
         for anonymized_box_ in anonymized_boxes:
             row_min, col_min, row_max, col_max = anonymized_box_["coordinates"]
-            crop = image[row_min:row_max, col_min:col_max]
+            crop_binary = image_binary[row_min:row_max, col_min:col_max]
 
-            # If length of box is short, then there are probably only a few letters in the box.
-            # In this case, scale the image up.
-            if crop.sum() == 0:
+            if crop_binary.sum() == 0:
                 # `_split_box` might output boxes that are empty.
                 # Could change `_split_box` such that it doesn't output empty boxes,
                 # such that this if statement is not needed.
                 texts.append("")
                 continue
+
+            crop = image[row_min:row_max, col_min:col_max]
             crop_processed = self._process_crop_before_read(crop)
 
             # Read text from image with easyocr
@@ -1684,7 +1691,8 @@ class PDFTextReader:
         # If empty/black box, box should be ignored
         if crop.sum() == 0:
             return {}
-
+        if crop_binary.sum() == 0:
+            return {}
         crop_binary_cleaned = self._remove_boundary_noise(
             binary_crop=crop_binary.copy()
         )
