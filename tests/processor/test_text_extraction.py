@@ -110,6 +110,30 @@ def test_get_text_from_boxes(pdf_text_reader, boxes, text_expected):
 @pytest.mark.parametrize(
     "image_path, anonymized_box, invert, text_expected",
     [
+        # (
+        #     "tests/data/processor/underlines.png",
+        #     {"coordinates": (2863, 296, 2898, 490)},
+        #     True,
+        #     "<anonym>Tiltalte 2</anonym>",
+        # ),
+        (
+            "tests/data/processor/underlines.png",
+            {"coordinates": (1186, 296, 1221, 490)},
+            True,
+            "<anonym>CPR nr. 1</anonym>",
+        ),
+        (
+            "tests/data/processor/get_text_from_box.png",
+            {"coordinates": [1007, 552, 1040, 583]},
+            False,
+            "<anonym>Ø</anonym>",
+        ),
+        (
+            "tests/data/processor/get_text_from_box_2.png",
+            {"coordinates": [1169, 274, 1213, 359]},
+            True,
+            "<anonym>By 1</anonym>",
+        ),
         (
             "tests/data/processor/get_text_from_box_3.png",
             {"coordinates": [886, 1952, 925, 2202]},
