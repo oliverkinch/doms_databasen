@@ -81,6 +81,7 @@ class PDFTextReader:
         # rest of the pages.
         underline_anonymization = True
         box_anonymization = True
+        text_tika = None
 
         for i, image in enumerate(images):
             if i == 0:
@@ -106,6 +107,7 @@ class PDFTextReader:
                     anonymized_boxes_underlines,
                     underlines,
                 ) = self._extract_underline_anonymization_boxes(image)
+                text_tika = self._read_text_with_tika(pdf_path=str(pdf_path))
 
             # If no indication of anonymization on first page, then try use Tika.
             # If Tika doesn't work, then use easrocr.
@@ -119,7 +121,7 @@ class PDFTextReader:
                 )
                 if not box_anonymization and not underline_anonymization:
                     logger.info(self.config.message_try_use_tika)
-                    pdf_text = self._read_text_with_tika(pdf_path=pdf_path)
+                    pdf_text = self._read_text_with_tika(pdf_path=str(pdf_path))
                     if pdf_text:
                         return pdf_text
                     else:
@@ -149,7 +151,7 @@ class PDFTextReader:
             page_text = self._get_text_from_boxes(boxes=all_boxes)
             pdf_text += f"{page_text}\n\n"
 
-        return pdf_text.strip()
+        return pdf_text.strip(), text_tika
 
     def _get_main_text_boxes(self, image: np.ndarray) -> List[dict]:
         """Read main text of page.
