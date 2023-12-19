@@ -38,7 +38,7 @@ neighbor_distance_max: 1
 
 box_area_min: 2000
 box_height_min: 35
-box_accept_ratio: 0.4
+box_accept_ratio: 0.95
 slight_shift_to_bottom: 5
 iou_overlap_threshold: 0.5
 indices_to_split_count_min: 1
@@ -46,9 +46,11 @@ indices_to_split_row_diff: 30
 max_scale: 3.3
 min_scale: 0.8
 
-threshold_binarize_anonymized_boxes: 1
+threshold_binarize_anonymized_boxes: 100
 threshold_binarize_refine_anonymized_box: 30
 threshold_binarize_split_indices: 100
+threshold_binarize_empty_box: 100
+threshold_binarize_top_page: 230
 threshold_max_gap: 15
 threshold_box_confidence: 0.3
 
@@ -129,7 +131,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "374"
+  case_id: "2472"
   all: False
   messages:
     give_correct_input: >
