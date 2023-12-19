@@ -1712,18 +1712,18 @@ class PDFTextReader:
         anonymized_box = self._refine(binary=binary, anonymized_box=anonymized_box)
         return anonymized_box
 
-    def _refine(self, binary: np.ndarray, anonymized_box: List[int]) -> List[int]:
+    def _refine(self, binary: np.ndarray, anonymized_box: dict) -> dict:
         """Refines bounding box.
 
         Args:
             binary (np.ndarray):
                 Binary image of the current page.
-            anonymized_box (tuple):
-                Tuple with coordinates given by min/max row/col of box.
+            anonymized_box (dict):
+                Anonymized box with coordinates.
 
         Returns:
-            anonymized_box (tuple):
-                Tuple with refined coordinates given by min/max row/col of box.
+            anonymized_box (dict):
+                Anonymized box with refined coordinates.
         """
         anonymized_box_copy = anonymized_box.copy()
         row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
@@ -1787,33 +1787,46 @@ class PDFTextReader:
         return anonymized_box
     
     def _shrink_box(self, anonymized_box: dict, top_bottom_left_right: str, binary: np.ndarray) -> dict:
-            row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
-            binary_crop = binary[row_min:row_max, col_min:col_max]
+        """Shrinks bounding box in one direction.
+        
+        Args:
+            anonymized_box (dict):
+                Anonymized box with coordinates.
+            top_bottom_left_right (str):
+                String indicating which direction to shrink.
+            binary (np.ndarray):
+                Binary image of the current page.
 
-            if top_bottom_left_right == "top":
-                rows, _ = np.where(binary_crop > 0)
-                row_min += rows.min()
-                anonymized_box["coordinates"][0] = row_min
+        Returns:
+            anonymized_box (dict):
+                Anonymized box with coordinates shrunk in one direction.
+        """
+        row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
+        binary_crop = binary[row_min:row_max, col_min:col_max]
 
-            elif top_bottom_left_right == "bottom":
-                n_rows = row_max - row_min
-                rows, _ = np.where(binary_crop > 0)
-                row_max = row_max - (n_rows - rows.max()) + 1 # +1 to make row_max exclusive
-                anonymized_box["coordinates"][2] = row_max
+        if top_bottom_left_right == "top":
+            rows, _ = np.where(binary_crop > 0)
+            row_min += rows.min()
+            anonymized_box["coordinates"][0] = row_min
 
-            elif top_bottom_left_right == "left":
-                _, cols = np.where(binary_crop > 0)
-                col_min += cols.min()
-                anonymized_box["coordinates"][1] = col_min
+        elif top_bottom_left_right == "bottom":
+            n_rows = row_max - row_min
+            rows, _ = np.where(binary_crop > 0)
+            row_max = row_max - (n_rows - rows.max()) + 1 # +1 to make row_max exclusive
+            anonymized_box["coordinates"][2] = row_max
 
-            elif top_bottom_left_right == "right":
-                n_cols = col_max - col_min
-                _, cols = np.where(binary_crop > 0)
-                col_max = col_max - (n_cols - cols.max()) + 1
-                anonymized_box["coordinates"][3] = col_max
+        elif top_bottom_left_right == "left":
+            _, cols = np.where(binary_crop > 0)
+            col_min += cols.min()
+            anonymized_box["coordinates"][1] = col_min
 
-            return anonymized_box
+        elif top_bottom_left_right == "right":
+            n_cols = col_max - col_min
+            _, cols = np.where(binary_crop > 0)
+            col_max = col_max - (n_cols - cols.max()) + 1
+            anonymized_box["coordinates"][3] = col_max
 
+        return anonymized_box
 
     def _row_col_has_white_pixels(self, row_col: np.ndarray) -> bool:
         """Checks if row/column has white pixels.
