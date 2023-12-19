@@ -25,7 +25,7 @@ from tika import parser
 
 from src.doms_databasen.constants import (
     BOX_HEIGHT_LOWER_BOUND,
-    BOX_LENGTH_SCALE_THRESHOLD,
+    LENGTH_TEN_LETTERS,
     DPI,
     TOLERANCE_FLOOD_FILL,
 )
@@ -1255,7 +1255,8 @@ class PDFTextReader:
 
         scale = self._get_scale(box_length)
         crop_scaled = self._scale_image(image=crop_refined, scale=scale)
-        crop_to_read = crop_scaled
+        crop_boundary = self._add_boundary(crop_scaled, padding=2)
+        crop_to_read = crop_boundary
         return crop_to_read
 
     def _get_scale(self, box_length: int) -> float:
@@ -1269,11 +1270,7 @@ class PDFTextReader:
             float:
                 Scale to scale box/crop with.
         """
-        scale = (
-            BOX_LENGTH_SCALE_THRESHOLD / box_length
-            if box_length > BOX_LENGTH_SCALE_THRESHOLD
-            else BOX_LENGTH_SCALE_THRESHOLD / box_length + 1
-        )
+        scale = LENGTH_TEN_LETTERS / box_length
         scale = min(scale, self.config.max_scale)
         scale = max(scale, self.config.min_scale)
         return scale
@@ -2072,7 +2069,6 @@ class PDFTextReader:
                 Image with boundary.
         """
         p = padding
-        assert p % 2 == 1, "Padding must be odd."
         padded = np.zeros(
             (image.shape[0] + p * 2, image.shape[1] + p * 2), dtype=np.uint8
         )
