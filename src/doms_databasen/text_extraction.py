@@ -1254,10 +1254,8 @@ class PDFTextReader:
         crop_refined, box_length = self._refine_crop(crop)
 
         scale = self._get_scale(box_length)
-        scaled = self._scale_image(image=crop_refined, scale=scale)
-
-        crop_processed = self._process_crop(crop=scaled)
-        crop_to_read = crop_processed
+        crop_scaled = self._scale_image(image=crop_refined, scale=scale)
+        crop_to_read = crop_scaled
         return crop_to_read
 
     def _get_scale(self, box_length: int) -> float:
@@ -1295,32 +1293,6 @@ class PDFTextReader:
         """
         scaled = cv2.resize(image, (0, 0), fx=scale, fy=scale)
         return scaled
-
-    def _process_crop(self, crop: np.ndarray) -> np.ndarray:
-        """Processes crop before reading text with easyocr.
-
-        Args:
-            crop (np.ndarray):
-                Crop (representing the anonymized box) to be processed.
-
-        Returns:
-            crop_processed (np.ndarray):
-                Processed crop.
-        """
-        # Increase size of letters
-        dilated = cv2.dilate(crop, np.ones((2, 2)))
-
-        dilated_boundary = self._add_boundary(dilated, padding=3)
-
-        sharpened = (
-            np.array(
-                skimage.filters.unsharp_mask(dilated_boundary, radius=20, amount=1.8),
-                dtype=np.uint8,
-            )
-            * 255  # Ensure range is [0, 255]
-        )
-        crop_processed = sharpened
-        return crop_processed
 
     def _refine_crop(
         self, crop: np.ndarray, padding: int = 3
