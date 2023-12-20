@@ -142,6 +142,12 @@ def test_get_text_from_boxes(pdf_text_reader, boxes, text_expected):
             False,
             "<anonym>Person 5 (P5)</anonym>",
         ),
+        (
+            "tests/data/processor/get_text_from_box_4.png",
+            {"coordinates": [562, 1206, 624, 1673]},
+            False,
+            "<anonym>Sagsøte 2's</anonym>",
+        ),
     ],
 )
 def test_read_text_from_anonymized_box(
@@ -152,7 +158,6 @@ def test_read_text_from_anonymized_box(
         image=image, anonymized_box=anonymized_box, invert=invert
     )
     assert anonymized_box["text"] == text_expected
-
 
 @pytest.mark.parametrize(
     "image_path, n_matches_expected",
@@ -273,4 +278,4 @@ def test_get_row_indices_to_split(pdf_text_reader, image_path, rows_to_split_exp
 
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_find_anonymized_boxes"])
+    pytest.main([__file__ + "::test_read_text_from_anonymized_box"])

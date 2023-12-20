@@ -1237,9 +1237,11 @@ class PDFTextReader:
             crop_to_read (np.ndarray):
                 Crop to read text from.
         """
-        crop_refined, box_length = self._refine_crop(crop)
+        crop_cleaned = self._remove_boundary_noise(crop=crop)
+        crop_refined, box_length = self._refine_crop(crop=crop_cleaned)
 
         scale = self._get_scale(box_length)
+
         crop_scaled = self._scale_image(image=crop_refined, scale=scale)
         crop_to_read = crop_scaled
         return crop_to_read
@@ -1291,9 +1293,10 @@ class PDFTextReader:
             float:
                 Length of box
         """
+
         binary = self._binarize(
             image=crop,
-            threshold=100,
+            threshold=self.config.threshold_binarize_process_crop,
             val_min=0,
             val_max=255,
         )
@@ -1673,7 +1676,7 @@ class PDFTextReader:
         binary[binary >= t] = val_max
         return binary
 
-    def _remove_boundary_noise(self, binary_crop: np.ndarray) -> np.ndarray:
+    def _remove_boundary_noise(self, crop: np.ndarray) -> np.ndarray:
         """Removes noise on the boundary of an anonymized box.
 
         All white pixels in a perfect bounding box should be a pixel of a relevant character.
@@ -1689,26 +1692,41 @@ class PDFTextReader:
                 Cropped binary image (anonymized box) with noise removed.
         """
 
+        binary_crop = self._binarize(
+            image=crop,
+            threshold=self.config.threshold_binarize_process_crop,
+            val_min=0,
+            val_max=255,
+        )
         blobs = self._get_blobs(binary_crop)
-        blob = blobs[0]
 
         for blob in blobs:
-            row_min, _, row_max, _ = blob.bbox
+            row_min, col_min, row_max, col_max = blob.bbox
             height = row_max - row_min
+            length = col_max - col_min
             # make blob zeros
 
             # All letters have a height > ~ 22 pixels.
             # A blob that touches the boundary and doesn't cross the
             # middle row of the image is supposedly not a letter, but noise.
             if (
-                height < 15
-                and self._touches_boundary(binary_crop, blob)
-                and not self._has_center_pixels(binary_crop, blob)
+                self._height_length_condition(height=height, length=length)
+                and self._touches_boundary(binary_crop=binary_crop, blob=blob)
+                and not self._has_center_pixels(binary_crop=binary_crop, blob=blob)
+                and not self._closely_square(height=height, length=length)
             ):
                 # Remove blob
                 coords = blob.coords
-                binary_crop[coords[:, 0], coords[:, 1]] = 0
-        return binary_crop
+                crop[coords[:, 0], coords[:, 1]] = 0
+        return crop
+    
+    @staticmethod
+    def _height_length_condition(height: int, length:int ):
+        return height < 20 or length > 50
+
+    @staticmethod
+    def _closely_square(height: int, length: int):
+        return abs(height - length) < 3
 
     @staticmethod
     def _touches_boundary(binary_crop: np.ndarray, blob: RegionProperties) -> bool:
@@ -1966,10 +1984,10 @@ def draw_box(image, box, pixel_value=0):
     image = image.copy()
     if isinstance(box, dict):
         row_min, col_min, row_max, col_max = box["coordinates"]
+        image[row_min:row_max, col_min:col_max] = pixel_value
     else:
         # blob
-        row_min, col_min, row_max, col_max = box.bbox
-
-    image[row_min:row_max, col_min:col_max] = pixel_value
+        coords = box.coords
+        image[coords[:, 0], coords[:, 1]] = pixel_value
 
     save_cv2_image_tmp(image)

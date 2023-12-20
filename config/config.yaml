@@ -47,14 +47,12 @@ max_scale: 3.3
 min_scale: 0.8
 
 threshold_binarize_anonymized_boxes: 100
-threshold_binarize_refine_anonymized_box: 30
 threshold_binarize_split_indices: 100
 threshold_binarize_empty_box: 100
 threshold_binarize_top_page: 230
 threshold_max_gap: 15
 threshold_box_confidence: 0.3
-
-split_boxes_line_idx_shift: 8
+threshold_binarize_process_crop: 100
 
 invert_find_anonymized_boxes: False
 invert_find_underline_anonymizations: True
