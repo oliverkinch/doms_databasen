@@ -1280,8 +1280,6 @@ class PDFTextReader:
     ) -> Tuple[np.ndarray, float]:
         """Refine crop.
 
-        Mostly relevant for boxes that have been split into multiple boxes.
-
         Args:
             crop (np.ndarray):
                 Crop of image representing a box.
@@ -1338,52 +1336,32 @@ class PDFTextReader:
         binary_splitted = self._make_split_between_overlapping_box_and_line(
             binary=inverted_boxes_split
         )
-        binary_splitted_inverted = cv2.bitwise_not(binary_splitted)
 
-        blobs = self._get_blobs(binary=binary_splitted)
+        sort_function = lambda blob: blob.area
+        blobs = self._get_blobs(binary=binary_splitted, sort_function=sort_function)
 
         anonymized_boxes = []
         for blob in blobs:
-            if blob.area_bbox < self.config.box_area_min:
+            if blob.area < self.config.box_area_min:
                 # Blob is too small to be considered an anonymized box.
                 break
-            row_min, col_min, row_max, col_max = blob.bbox
 
-            box_height = row_max - row_min
+            if not self._conditions_for_box(blob):
+                continue
 
-            if (
-                blob.area_filled / blob.area_bbox > self.config.box_accept_ratio
-                and box_height > self.config.box_height_min
-            ):
-                assert 40 < box_height < 80, "Box height is not in expected range?"
+            assert 40 < blob.bbox[2] - blob.bbox[0] < 80, "Box height is not in expected range?"
+            anonymized_box = {
+                "coordinates": [*blob.bbox],
+                "origin": "box",
+            }
+            anonymized_boxes.append(anonymized_box)
 
-                anonymized_box = {
-                    "coordinates": [row_min, col_min, row_max, col_max],
-                    "origin": "box",
-                }
-                anonymized_boxes.append(anonymized_box)
-
-                # # `row_max - slight_shift_to_bottom` as text is usually in the top of the box.
-                # anonymized_box = {
-                #     "coordinates": [
-                #         row_min,
-                #         col_min,
-                #         row_max - self.config.slight_shift_to_bottom,
-                #         col_max,
-                #     ],
-                #     "origin": "box",
-                # }
-                # anonymized_box_refined = self._refine_anonymized_box(
-                #     anonymized_box=anonymized_box,
-                #     image=image,
-                #     binary=binary_splitted_inverted,
-                # )
-                # if anonymized_box_refined:
-                #     anonymized_boxes.append(anonymized_box_refined)
-            else:
-                # Blob is not a bounding box.
-                pass
         return anonymized_boxes
+    
+    def _conditions_for_box(self, blob: RegionProperties):
+        box_height = blob.bbox[2] - blob.bbox[0]
+        
+        return blob.area_filled / blob.area_bbox > self.config.box_accept_ratio and box_height > self.config.box_height_min
 
     def _split_boxes_in_image(self, inverted: np.ndarray) -> np.ndarray:
         """Splits overlapping boxes in image
@@ -1445,17 +1423,131 @@ class PDFTextReader:
 
         edges_h = self._get_horizontal_edges(closed=closed)
 
-        row_indices_to_split = [0]
+        edge_lengths = self._get_edge_lengths(edges_h=edges_h)
+
+        rows_to_split = self._rows_to_split(edge_lengths=edge_lengths)
+        return rows_to_split
+    
+    def _rows_to_split(self, edge_lengths: dict) -> List[int]:
+        """Get rows to split blob of overlapping boxes into separate boxes.
+        
+        Args:
+            edge_lengths (dict):
+                Dictionary with indices and lengths of horizontal edges.
+            
+        Returns:
+            List[int]:
+                List of row indices to split.
+        """
+        rows_to_split = [0]
+        for idx, length in edge_lengths.items():
+            if self._split_conditions(length=length, idx=idx, predesessor_idx=rows_to_split[-1]):
+                rows_to_split.append(idx)
+        return rows_to_split[1:]
+    
+    def _split_conditions(self, length: int, idx: int, predesessor_idx: int) -> bool:
+        """Checks if conditions for splitting are met.
+
+        Args:
+            length (int):
+                Length of edge.
+            idx (int):
+                Index of edge.
+            predesessor_idx (int):
+                Index of previous edge.
+
+        Returns:
+            bool:
+                True if conditions for splitting are met. False otherwise.
+        """
+        return length > self.config.indices_to_split_edge_min_length and idx - predesessor_idx > self.config.indices_to_split_row_diff
+
+    def _get_edge_lengths(self, edges_h: np.ndarray):
+        """Get lengths of horizontal edges.
+        
+        Args:
+            edges_h (np.ndarray):
+                Horizontal edges.
+
+        Returns:
+            dict:
+                Dictionary with indices and lengths of horizontal edges.
+        """
         edge_row_indices = np.where(edges_h > 0)[0]
-        unique, counts = np.unique(edge_row_indices, return_counts=True)
-        for row_idx, count in zip(unique, counts):
-            if (
-                count >= self.config.indices_to_split_count_min
-                and row_idx
-                > row_indices_to_split[-1] + self.config.indices_to_split_row_diff
-            ):
-                row_indices_to_split.append(row_idx)
-        return row_indices_to_split[1:]
+        indices, lengths = np.unique(edge_row_indices, return_counts=True)
+        edge_lengths = dict(zip(indices, lengths))
+
+        edges_grouped = self._group_edges(indices)
+        edge_lengths_merged = self._merge_adjacent_edges(edges_grouped=edges_grouped, edge_lengths=edge_lengths)
+
+        return edge_lengths_merged
+
+    @staticmethod
+    def _group_edges(indices: np.ndarray):
+        """Group indices of horizontal edges.
+        
+        Adjacent indices are grouped together.
+
+        Args:
+            indices (np.ndarray):
+                Indices of horizontal edges.
+        
+        Returns:
+            List[List[int]]:
+                List of grouped indices.
+        """
+        edges_grouped = [[indices[0]]]
+
+        adjacent_indices = np.diff(indices) == 1
+        for i in range(1, len(indices)):
+            if adjacent_indices[i - 1]:
+                edges_grouped[-1].append(indices[i])
+            else:
+                edges_grouped.append([indices[i]])
+        return edges_grouped
+
+    def _merge_adjacent_edges(self, edges_grouped: List[List[int]], edge_lengths: dict):
+        """Merge adjacent edges.
+        
+        Adjacent edges are merged together. The edge in each group with
+        the largest length is used as the index for the merged edge.
+
+        Args:
+            edges_grouped (List[List[int]]):
+                List of grouped indices.
+            edge_lengths (dict):
+                Dictionary with indices and lengths of horizontal edges.
+            
+        Returns:
+            dict:
+                Dictionary with indices and lengths of horizontal edges.
+        """
+        edge_lengths_merged = dict()
+        for group in edges_grouped:
+            idx = self._largest_edge_in_group(group=group, edge_lengths=edge_lengths)
+            total_length = sum(edge_lengths[i] for i in group)
+            edge_lengths_merged[idx] = total_length
+        return edge_lengths_merged
+
+    @staticmethod
+    def _largest_edge_in_group(group: List[int], edge_lengths: dict):
+        """Get index of largest edge in group.
+        
+        Args:
+            group (List[int]):
+                List of indices.
+            edge_lengths (dict):
+                Dictionary with indices and lengths of horizontal edges.
+
+        Returns:
+            int:
+                Index of largest edge in group.
+        """
+        idx = group[0]
+        for i in group[1:]:
+            if edge_lengths[i] > edge_lengths[idx]:
+                idx = i
+        return idx
 
     def _get_horizontal_edges(self, closed: np.ndarray) -> np.ndarray:
         """Get horizontal edges from image.
@@ -1474,6 +1566,16 @@ class PDFTextReader:
         return edges_h
 
     def _get_vertical_edges(self, binary: np.ndarray) -> np.ndarray:
+        """Get vertical edges from image.
+        
+        Args:
+            binary (np.ndarray):
+                Image to get vertical edges from.
+
+        Returns:
+            np.ndarray:
+                All vertical edges.
+        """
         edges_v = skimage.filters.sobel_v(binary)
         edges_v = np.abs(edges_v)
         edges_v = np.array(edges_v * 255, dtype=np.uint8)

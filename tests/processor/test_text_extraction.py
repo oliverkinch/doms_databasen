@@ -258,6 +258,17 @@ def test_find_tables(pdf_text_reader, image_path, n_tables_expected):
     table_boxes = pdf_text_reader._find_tables(image=image)
     assert len(table_boxes) == n_tables_expected
 
+@pytest.mark.parametrize(
+    "image_path, rows_to_split_expected",
+    [
+        ("tests/data/processor/split_boxes.png", [61, 121]),
+    ],
+)
+def test_get_row_indices_to_split(pdf_text_reader, image_path, rows_to_split_expected):
+    image = read_image(image_path)
+    rows_to_split = pdf_text_reader._get_row_indices_to_split(blob_image=image)
+    assert rows_to_split == rows_to_split_expected
+
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_line_anonymization_to_boxes"])
+    pytest.main([__file__ + "::test_find_anonymized_boxes"])

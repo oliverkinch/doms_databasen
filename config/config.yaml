@@ -36,12 +36,12 @@ max_y_difference: 25
 
 neighbor_distance_max: 1
 
-box_area_min: 2000
+box_area_min: 2500
 box_height_min: 35
-box_accept_ratio: 0.95
+box_accept_ratio: 0.6
 slight_shift_to_bottom: 5
 iou_overlap_threshold: 0.5
-indices_to_split_count_min: 1
+indices_to_split_edge_min_length: 20
 indices_to_split_row_diff: 30
 max_scale: 3.3
 min_scale: 0.8
@@ -130,7 +130,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "2552"
+  case_id: "1919"
   all: False
   messages:
     give_correct_input: >
