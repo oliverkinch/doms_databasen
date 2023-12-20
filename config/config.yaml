@@ -53,6 +53,9 @@ threshold_binarize_top_page: 230
 threshold_max_gap: 15
 threshold_box_confidence: 0.3
 threshold_binarize_process_crop: 100
+threshold_remove_boundary_height: 20
+threshold_remove_boundary_length: 50
+threshold_remove_boundary_closely_square: 3
 
 invert_find_anonymized_boxes: False
 invert_find_underline_anonymizations: True

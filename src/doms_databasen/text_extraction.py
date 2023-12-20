@@ -26,7 +26,7 @@ from tika import parser
 from src.doms_databasen.constants import (
     BOX_HEIGHT_LOWER_BOUND,
     DPI,
-    LENGTH_TEN_LETTERS,
+    LENGTH_EIGHT_LETTERS,
     TOLERANCE_FLOOD_FILL,
 )
 
@@ -1257,7 +1257,7 @@ class PDFTextReader:
             float:
                 Scale to scale box/crop with.
         """
-        scale = LENGTH_TEN_LETTERS / box_length
+        scale = LENGTH_EIGHT_LETTERS / box_length
         scale = min(scale, self.config.max_scale)
         scale = max(scale, self.config.min_scale)
         return scale
@@ -1685,11 +1685,11 @@ class PDFTextReader:
 
         Args:
             binary_crop (np.ndarray):
-                Cropped binary image showing the anonymized box.
+                Cropped image showing the anonymized box.
 
         Returns:
             np.ndarray:
-                Cropped binary image (anonymized box) with noise removed.
+                Cropped image (anonymized box) with boundary noise removed.
         """
 
         binary_crop = self._binarize(
@@ -1712,7 +1712,7 @@ class PDFTextReader:
             if (
                 self._height_length_condition(height=height, length=length)
                 and self._touches_boundary(binary_crop=binary_crop, blob=blob)
-                and not self._has_center_pixels(binary_crop=binary_crop, blob=blob)
+                and self._too_low_longest_distance_from_boundary(crop=binary_crop, blob=blob)
                 and not self._closely_square(height=height, length=length)
             ):
                 # Remove blob
@@ -1720,13 +1720,57 @@ class PDFTextReader:
                 crop[coords[:, 0], coords[:, 1]] = 0
         return crop
     
-    @staticmethod
-    def _height_length_condition(height: int, length:int ):
-        return height < 20 or length > 50
+    def _too_low_longest_distance_from_boundary(self, crop: np.ndarray, blob: RegionProperties):
+        return self._maximum_distance_from_boundary(crop=crop, blob=blob) < 10
+    
+    def _maximum_distance_from_boundary(self, crop: np.ndarray, blob: RegionProperties):
+        n, m = crop.shape
+        row_boundaries = [0, n - 1]
+        col_boundaries = [0, m - 1]
+        rows, cols = blob.coords.transpose()
+
+        rows_distance_to_boundary = self._min_distance_to_boundary(indices=rows, boundaries=row_boundaries)
+        cols_distance_to_boundary = self._min_distance_to_boundary(indices=cols, boundaries=col_boundaries)
+        # Concatenate
+        concatenated = np.concatenate([rows_distance_to_boundary, cols_distance_to_boundary], axis=1)
+        min_distance_to_boundary_for_each_point = self._min_distance_to_boundary_for_each_point(concatenated)
+        maximum_distance = np.max(min_distance_to_boundary_for_each_point)
+        return maximum_distance
 
     @staticmethod
-    def _closely_square(height: int, length: int):
-        return abs(height - length) < 3
+    def _min_distance_to_boundary(indices: np.ndarray, boundaries: List[int]):
+        """Get minimum distance from indices to boundaries.
+        
+        For each index in indices, the minimum distance to a boundary is calculated.
+
+        Args:
+            indices (np.ndarray):
+                Indices to calculate distance from.
+            boundaries (List[int]):
+                Boundaries to calculate distance to.
+
+        Returns:
+            np.ndarray:
+                Minimum distance from indices to a boundary.
+        """
+        return np.min(np.abs(indices[:, None] - boundaries), axis=1)[:, None]
+        
+    @staticmethod
+    def _min_distance_to_boundary_for_each_point(concatenated: np.ndarray) -> np.ndarray:
+        """Get minimum distance from indices to boundaries.
+        
+        Each row in concatenated is a 2D point, where the first value
+        is the shortest distance to a row boundary, and the second value
+        is the shortest distance to a column boundary.
+        This function returns the minimum distance from each point to a boundary.
+        """
+        return np.min(concatenated, axis=1)
+
+    def _height_length_condition(self, height: int, length: int) -> bool:
+        return height < self.config.threshold_remove_boundary_height or length > self.config.threshold_remove_boundary_length
+
+    def _closely_square(self, height: int, length: int) -> bool:
+        return abs(height - length) < self.config.threshold_remove_boundary_closely_square
 
     @staticmethod
     def _touches_boundary(binary_crop: np.ndarray, blob: RegionProperties) -> bool:

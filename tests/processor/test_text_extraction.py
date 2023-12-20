@@ -146,7 +146,7 @@ def test_get_text_from_boxes(pdf_text_reader, boxes, text_expected):
             "tests/data/processor/get_text_from_box_4.png",
             {"coordinates": [562, 1206, 624, 1673]},
             False,
-            "<anonym>Sagsøte 2's</anonym>",
+            "<anonym>Sagsøgte 2's</anonym>",
         ),
     ],
 )
