@@ -25,8 +25,8 @@ from tika import parser
 
 from src.doms_databasen.constants import (
     BOX_HEIGHT_LOWER_BOUND,
-    LENGTH_TEN_LETTERS,
     DPI,
+    LENGTH_TEN_LETTERS,
     TOLERANCE_FLOOD_FILL,
 )
 
@@ -385,7 +385,9 @@ class PDFTextReader:
         row_min, col_min, row_max, col_max = cell_box["coordinates"]
 
         crop = inverted[row_min:row_max, col_min:col_max]
-        binary = self._binarize(image=crop, threshold=self.config.threshold_binarize_empty_box)
+        binary = self._binarize(
+            image=crop, threshold=self.config.threshold_binarize_empty_box
+        )
         if binary.sum() == 0:
             cell.value = ""
             return
@@ -616,9 +618,7 @@ class PDFTextReader:
 
             height = row_max - row_min
             if blob.area == blob.area_bbox and lb < height < ub:
-                box_row_min = (
-                    row_min - self.config.underline_box_height
-                )
+                box_row_min = row_min - self.config.underline_box_height
                 box_row_max = row_min - 1  # Just above underline
                 box_col_min = col_min
                 box_col_max = col_max
@@ -635,9 +635,9 @@ class PDFTextReader:
                 underlines.append(blob.bbox)
 
                 box_is_duplicate = any(
-                        self._too_much_overlap(box_1=anonymized_box, box_2=box)
-                        for box in anonymized_boxes
-                    )
+                    self._too_much_overlap(box_1=anonymized_box, box_2=box)
+                    for box in anonymized_boxes
+                )
                 if not box_is_duplicate:
                     anonymized_boxes.append(anonymized_box)
 
@@ -799,7 +799,10 @@ class PDFTextReader:
                 Processed top part.
         """
         logo_binary = self._binarize(
-            image=page_top, threshold=self.config.threshold_binarize_top_page, val_min=0, val_max=255
+            image=page_top,
+            threshold=self.config.threshold_binarize_top_page,
+            val_min=0,
+            val_max=255,
         )
         inverted = cv2.bitwise_not(logo_binary)
         return inverted
@@ -1241,8 +1244,6 @@ class PDFTextReader:
         crop_to_read = crop_scaled
         return crop_to_read
 
-
-
     def _get_scale(self, box_length: int) -> float:
         """Get scale to scale box/crop with.
 
@@ -1349,7 +1350,9 @@ class PDFTextReader:
             if not self._conditions_for_box(blob):
                 continue
 
-            assert 40 < blob.bbox[2] - blob.bbox[0] < 80, "Box height is not in expected range?"
+            assert (
+                40 < blob.bbox[2] - blob.bbox[0] < 80
+            ), "Box height is not in expected range?"
             anonymized_box = {
                 "coordinates": [*blob.bbox],
                 "origin": "box",
@@ -1357,11 +1360,14 @@ class PDFTextReader:
             anonymized_boxes.append(anonymized_box)
 
         return anonymized_boxes
-    
+
     def _conditions_for_box(self, blob: RegionProperties):
         box_height = blob.bbox[2] - blob.bbox[0]
-        
-        return blob.area_filled / blob.area_bbox > self.config.box_accept_ratio and box_height > self.config.box_height_min
+
+        return (
+            blob.area_filled / blob.area_bbox > self.config.box_accept_ratio
+            and box_height > self.config.box_height_min
+        )
 
     def _split_boxes_in_image(self, inverted: np.ndarray) -> np.ndarray:
         """Splits overlapping boxes in image
@@ -1427,24 +1433,26 @@ class PDFTextReader:
 
         rows_to_split = self._rows_to_split(edge_lengths=edge_lengths)
         return rows_to_split
-    
+
     def _rows_to_split(self, edge_lengths: dict) -> List[int]:
         """Get rows to split blob of overlapping boxes into separate boxes.
-        
+
         Args:
             edge_lengths (dict):
                 Dictionary with indices and lengths of horizontal edges.
-            
+
         Returns:
             List[int]:
                 List of row indices to split.
         """
         rows_to_split = [0]
         for idx, length in edge_lengths.items():
-            if self._split_conditions(length=length, idx=idx, predesessor_idx=rows_to_split[-1]):
+            if self._split_conditions(
+                length=length, idx=idx, predesessor_idx=rows_to_split[-1]
+            ):
                 rows_to_split.append(idx)
         return rows_to_split[1:]
-    
+
     def _split_conditions(self, length: int, idx: int, predesessor_idx: int) -> bool:
         """Checks if conditions for splitting are met.
 
@@ -1460,11 +1468,14 @@ class PDFTextReader:
             bool:
                 True if conditions for splitting are met. False otherwise.
         """
-        return length > self.config.indices_to_split_edge_min_length and idx - predesessor_idx > self.config.indices_to_split_row_diff
+        return (
+            length > self.config.indices_to_split_edge_min_length
+            and idx - predesessor_idx > self.config.indices_to_split_row_diff
+        )
 
     def _get_edge_lengths(self, edges_h: np.ndarray):
         """Get lengths of horizontal edges.
-        
+
         Args:
             edges_h (np.ndarray):
                 Horizontal edges.
@@ -1478,20 +1489,22 @@ class PDFTextReader:
         edge_lengths = dict(zip(indices, lengths))
 
         edges_grouped = self._group_edges(indices)
-        edge_lengths_merged = self._merge_adjacent_edges(edges_grouped=edges_grouped, edge_lengths=edge_lengths)
+        edge_lengths_merged = self._merge_adjacent_edges(
+            edges_grouped=edges_grouped, edge_lengths=edge_lengths
+        )
 
         return edge_lengths_merged
 
     @staticmethod
     def _group_edges(indices: np.ndarray):
         """Group indices of horizontal edges.
-        
+
         Adjacent indices are grouped together.
 
         Args:
             indices (np.ndarray):
                 Indices of horizontal edges.
-        
+
         Returns:
             List[List[int]]:
                 List of grouped indices.
@@ -1508,7 +1521,7 @@ class PDFTextReader:
 
     def _merge_adjacent_edges(self, edges_grouped: List[List[int]], edge_lengths: dict):
         """Merge adjacent edges.
-        
+
         Adjacent edges are merged together. The edge in each group with
         the largest length is used as the index for the merged edge.
 
@@ -1517,7 +1530,7 @@ class PDFTextReader:
                 List of grouped indices.
             edge_lengths (dict):
                 Dictionary with indices and lengths of horizontal edges.
-            
+
         Returns:
             dict:
                 Dictionary with indices and lengths of horizontal edges.
@@ -1532,7 +1545,7 @@ class PDFTextReader:
     @staticmethod
     def _largest_edge_in_group(group: List[int], edge_lengths: dict):
         """Get index of largest edge in group.
-        
+
         Args:
             group (List[int]):
                 List of indices.
@@ -1567,7 +1580,7 @@ class PDFTextReader:
 
     def _get_vertical_edges(self, binary: np.ndarray) -> np.ndarray:
         """Get vertical edges from image.
-        
+
         Args:
             binary (np.ndarray):
                 Image to get vertical edges from.

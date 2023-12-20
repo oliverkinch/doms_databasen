@@ -90,7 +90,7 @@ class Processor(PDFTextReader):
         else:
             # Remove anonymization tags from easyocr text.
             text = re.sub(r"<anonym.*</anonym>", "", text_anonymized)
-            
+
         processed_data["text"] = text
 
         if not self.config.testing:

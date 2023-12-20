@@ -183,6 +183,7 @@ def test_remove_boundary_noise(pdf_text_reader, image_path):
     assert binary_image[0, :].sum() == 0
     assert binary_image[N - 1, :].sum() == 0
 
+
 @pytest.mark.parametrize(
     "image_path, n_splits_expected",
     [
@@ -257,6 +258,7 @@ def test_find_tables(pdf_text_reader, image_path, n_tables_expected):
     image = read_image(image_path)
     table_boxes = pdf_text_reader._find_tables(image=image)
     assert len(table_boxes) == n_tables_expected
+
 
 @pytest.mark.parametrize(
     "image_path, rows_to_split_expected",
