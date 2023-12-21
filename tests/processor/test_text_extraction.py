@@ -177,16 +177,17 @@ def test_find_anonymized_boxes(pdf_text_reader, image_path, n_matches_expected):
     "image_path",
     [
         ("tests/data/processor/boundary_noise.png"),
+        ("tests/data/processor/boundary_noise_2.png"),
     ],
 )
-def test_remove_boundary_noise(pdf_text_reader, image_path):
-    binary_image = read_image(image_path)
-    N, M = binary_image.shape
-    binary_image = pdf_text_reader._remove_boundary_noise(binary_image)
-    assert binary_image[:, 0].sum() == 0
-    assert binary_image[:, M - 1].sum() == 0
-    assert binary_image[0, :].sum() == 0
-    assert binary_image[N - 1, :].sum() == 0
+def test_remove_boundary_noise(pdf_text_reader, config, image_path):
+    image = read_image(image_path)
+    N, M = image.shape
+    binary_image = pdf_text_reader._remove_boundary_noise(image)
+    assert (image[:, 0] <= config.threshold_binarize_process_crop).all()
+    assert (image[:, M - 1]<= config.threshold_binarize_process_crop).all()
+    assert (image[0, :]<= config.threshold_binarize_process_crop).all()
+    assert (image[N - 1, :]<= config.threshold_binarize_process_crop).all()
 
 
 @pytest.mark.parametrize(
@@ -278,4 +279,4 @@ def test_get_row_indices_to_split(pdf_text_reader, image_path, rows_to_split_exp
 
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_read_text_from_anonymized_box"])
+    pytest.main([__file__ + "::test_remove_boundary_noise"])

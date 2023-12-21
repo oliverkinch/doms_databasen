@@ -1704,15 +1704,11 @@ class PDFTextReader:
             row_min, col_min, row_max, col_max = blob.bbox
             height = row_max - row_min
             length = col_max - col_min
-            # make blob zeros
 
-            # All letters have a height > ~ 22 pixels.
-            # A blob that touches the boundary and doesn't cross the
-            # middle row of the image is supposedly not a letter, but noise.
             if (
                 self._height_length_condition(height=height, length=length)
                 and self._touches_boundary(binary_crop=binary_crop, blob=blob)
-                and self._too_low_longest_distance_from_boundary(crop=binary_crop, blob=blob)
+                and self._low_longest_distance_from_boundary(crop=binary_crop, blob=blob)
                 and not self._closely_square(height=height, length=length)
             ):
                 # Remove blob
@@ -1720,8 +1716,9 @@ class PDFTextReader:
                 crop[coords[:, 0], coords[:, 1]] = 0
         return crop
     
-    def _too_low_longest_distance_from_boundary(self, crop: np.ndarray, blob: RegionProperties):
-        return self._maximum_distance_from_boundary(crop=crop, blob=blob) < 10
+    def _low_longest_distance_from_boundary(self, crop: np.ndarray, blob: RegionProperties):
+        n = min(crop.shape)
+        return self._maximum_distance_from_boundary(crop=crop, blob=blob) < n * 0.3
     
     def _maximum_distance_from_boundary(self, crop: np.ndarray, blob: RegionProperties):
         n, m = crop.shape
