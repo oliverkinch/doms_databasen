@@ -382,9 +382,7 @@ class PDFTextReader:
         """
         inverted = cv2.bitwise_not(image)
         cell_box = self._cell_to_box(cell)
-        row_min, col_min, row_max, col_max = cell_box["coordinates"]
-
-        crop = inverted[row_min:row_max, col_min:col_max]
+        crop = self._box_to_crop(box=cell_box, image=inverted)
         binary = self._binarize(
             image=crop, threshold=self.config.threshold_binarize_empty_box
         )
@@ -396,17 +394,25 @@ class PDFTextReader:
         if not split_indices:
             cell_boxes = [cell_box]
         else:
-            cell_boxes = self._split_cell_box(cell_box, split_indices)
+            cell_boxes = self._split_cell_box(
+                cell_box=cell_box, split_indices=split_indices
+            )
 
         all_text = ""
         for cell_box_ in cell_boxes:
-            row_min, col_min, row_max, col_max = cell_box_["coordinates"]
-            crop = inverted[row_min:row_max, col_min:col_max]
-            crop_refined, _ = self._refine_crop(
-                crop=crop, padding=self.config.cell_box_crop_padding
+            crop = self._box_to_crop(box=cell_box_, image=inverted)
+            crop_refined, _ = self._refine_box(
+                box=cell_box_,
+                crop=crop,
+                binary_threshold=self.config.threshold_binarize_empty_box,
             )
 
-            text = self._read_text(crop_refined)
+            # crop_refined = inverted[row_min:row_max, col_min:col_max]
+            crop_boundary = self._add_boundary(
+                image=crop_refined, padding=self.config.cell_box_crop_padding
+            )
+
+            text = self._read_text(crop_boundary)
             all_text = self._add_text(text, all_text)
 
         # Remove last newline character
@@ -1178,20 +1184,36 @@ class PDFTextReader:
             val_max=255,
         )
 
-        row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
+        crop = self._box_to_crop(box=anonymized_box, image=image)
 
-        crop = image[row_min:row_max, col_min:col_max]
+        crop_cleaned = self._remove_boundary_noise(crop=crop.copy())
+        crop_refined, anonymized_box_refined = self._refine_box(
+            crop=crop_cleaned,
+            box=anonymized_box,
+            padding=self.config.anonymized_box_crop_padding,
+            binary_threshold=self.config.threshold_binarize_process_crop,
+        )
 
         # Make a box for each word in the box
         # I get better results with easyocr using this approach.
-        anonymized_boxes = self._split_box(crop=crop, anonymized_box=anonymized_box)
+        anonymized_boxes = self._split_box(
+            crop=crop_refined, anonymized_box=anonymized_box_refined
+        )
+
+        if len(anonymized_boxes) == 1:
+            crop_to_read = self._process_crop_before_read(
+                crop=crop_refined,
+                refine_padding=self.config.anonymized_box_crop_padding,
+            )
+            text = self._read_text_from_crop(crop=crop_to_read)
+            anonymized_box["text"] = f"<anonym>{text}</anonym>"
+            return anonymized_box
 
         texts = []
         # `anonymized_boxes` are sorted left to right
         # E.g. the first box will contain the first word of `anonymized_box`.
         for anonymized_box_ in anonymized_boxes:
-            row_min, col_min, row_max, col_max = anonymized_box_["coordinates"]
-            crop_binary = image_binary[row_min:row_max, col_min:col_max]
+            crop_binary = self._box_to_crop(box=anonymized_box_, image=image_binary)
 
             if crop_binary.sum() == 0:
                 # `_split_box` might output boxes that are empty.
@@ -1200,31 +1222,75 @@ class PDFTextReader:
                 texts.append("")
                 continue
 
-            crop = image[row_min:row_max, col_min:col_max]
-            crop_processed = self._process_crop_before_read(crop)
+            crop = self._box_refined_to_crop(
+                box_refined=anonymized_box_, crop_refined=crop_refined
+            )
+            crop_to_read = self._process_crop_before_read(
+                crop=crop, refine_padding=self.config.anonymized_box_crop_padding
+            )
 
             # Read text from image with easyocr
-            result = self.reader.readtext(crop_processed)
-
-            if len(result) == 0:
-                text = ""
-            else:
-                text = " ".join(
-                    [
-                        box[1]
-                        for box in result
-                        if box[2] > self.config.threshold_box_confidence
-                    ]
-                )
+            text = self._read_text_from_crop(crop=crop_to_read)
 
             texts.append(text)
 
-        text_all = " ".join(texts).strip()
+        text_all = " ".join(text for text in texts if text).strip()
 
         anonymized_box["text"] = f"<anonym>{text_all}</anonym>" if text_all else ""
         return anonymized_box
 
-    def _process_crop_before_read(self, crop: np.ndarray) -> np.ndarray:
+    def _read_text_from_crop(self, crop: np.ndarray) -> str:
+        """Read text from crop.
+
+        Args:
+            crop (np.ndarray):
+                Crop (representing anonymized box) to read text from.
+
+        Returns:
+            text (str):
+                Text from crop.
+        """
+        result = self.reader.readtext(crop)
+
+        if len(result) == 0:
+            text = ""
+        else:
+            text = " ".join(
+                [
+                    box[1]
+                    for box in result
+                    if box[2] > self.config.threshold_box_confidence
+                ]
+            )
+        return text
+
+    def _box_refined_to_crop(
+        self, box_refined: dict, crop_refined: np.ndarray
+    ) -> np.ndarray:
+        row_min, col_min, row_max, col_max = box_refined["crop_refined_coordinates"]
+        crop = crop_refined[row_min:row_max, col_min:col_max]
+        return crop
+
+    def _box_to_crop(self, box: dict, image: np.ndarray) -> dict:
+        """Convert box to crop.
+
+        Args:
+            box (dict):
+                Anonymized box with coordinates.
+            image (np.ndarray):
+                Image of the current page.
+
+        Returns:
+            crop (np.ndarray):
+                Crop of image representing the box.
+        """
+        row_min, col_min, row_max, col_max = box["coordinates"]
+        crop = image[row_min:row_max, col_min:col_max]
+        return crop
+
+    def _process_crop_before_read(
+        self, crop: np.ndarray, refine_padding: int = 0
+    ) -> np.ndarray:
         """Processes crop before reading text with easyocr.
 
         I get better results with easyocr using this approach.
@@ -1237,13 +1303,22 @@ class PDFTextReader:
             crop_to_read (np.ndarray):
                 Crop to read text from.
         """
-        crop_cleaned = self._remove_boundary_noise(crop=crop)
-        crop_refined, box_length = self._refine_crop(crop=crop_cleaned)
+        if refine_padding:
+            crop_refined, _ = self._refine_box(
+                crop=crop,
+                binary_threshold=self.config.threshold_binarize_process_crop,
+                padding=refine_padding,
+            )
+        else:
+            crop_refined = crop
 
-        scale = self._get_scale(box_length)
-
+        box_length = crop.shape[1]
+        scale = self._get_scale(box_length=box_length)
         crop_scaled = self._scale_image(image=crop_refined, scale=scale)
-        crop_to_read = crop_scaled
+        crop_boundary = self._add_boundary(
+            image=crop_scaled, padding=self.config.anonymized_box_crop_padding
+        )
+        crop_to_read = crop_boundary
         return crop_to_read
 
     def _get_scale(self, box_length: int) -> float:
@@ -1278,35 +1353,59 @@ class PDFTextReader:
         scaled = cv2.resize(image, (0, 0), fx=scale, fy=scale)
         return scaled
 
-    def _refine_crop(
-        self, crop: np.ndarray, padding: int = 3
-    ) -> Tuple[np.ndarray, float]:
+    def _refine_box(
+        self,
+        crop: np.ndarray,
+        binary_threshold: int,
+        box: dict = None,
+        padding: int = 0,
+    ) -> tuple:
         """Refine crop.
 
         Args:
+            box (dict):
+                Anonymized/cell box with coordinates.
             crop (np.ndarray):
-                Crop of image representing a box.
+                Crop of image representing the box.
 
         Returns:
-            np.ndarray:
-                Refined crop.
-            float:
-                Length of box
+            box_refined (dict):
+                Refined box with coordinates.
         """
+        n, m = crop.shape
 
         binary = self._binarize(
             image=crop,
-            threshold=self.config.threshold_binarize_process_crop,
+            threshold=binary_threshold,
             val_min=0,
             val_max=255,
         )
+        # self.config.threshold_binarize_process_crop
         rows, cols = np.where(binary > 0)
         col_first, col_last = cols.min(), cols.max()
         row_first, row_last = rows.min(), rows.max()
-        crop_fitted = crop[row_first : row_last + 1, col_first : col_last + 1]
-        crop_boundary = self._add_boundary(crop_fitted, padding=padding)
-        box_length = col_last - col_first
-        return crop_boundary, box_length
+        p = padding
+
+        # Ensure that new coordinates are in [0, n) x [0, m)
+        row_first_ = max(row_first - p, 0)
+        col_first_ = max(col_first - p, 0)
+        row_last_ = min(row_last + 1 + p, n)
+        col_last_ = min(col_last + 1 + p, m)
+        crop_refined = crop[row_first_:row_last_, col_first_:col_last_]
+        if box is None:
+            return crop_refined, None
+
+        # Padding here could make the box coordinates go out of bounds.
+        box_refined = {
+            "coordinates": (
+                box["coordinates"][0] + row_first_,
+                box["coordinates"][1] + col_first_,
+                box["coordinates"][2] - (n - row_last_),
+                box["coordinates"][3] - (m - col_last_),
+            )
+        }
+
+        return crop_refined, box_refined
 
     def _find_anonymized_boxes(self, image: np.ndarray) -> List[dict]:
         """Finds anonymized boxes in image.
@@ -1360,6 +1459,11 @@ class PDFTextReader:
                 "coordinates": [*blob.bbox],
                 "origin": "box",
             }
+
+            # TODO Refine box her med _remove_boundary_noise
+            # og _refine_box? Så behøves de ikke at bruges inden
+            # at _split_box box kaldes.
+
             anonymized_boxes.append(anonymized_box)
 
         return anonymized_boxes
@@ -1704,40 +1808,56 @@ class PDFTextReader:
             row_min, col_min, row_max, col_max = blob.bbox
             height = row_max - row_min
             length = col_max - col_min
+            coords = blob.coords
 
-            if (
+            touches_boundary = self._touches_boundary(
+                binary_crop=binary_crop, blob=blob
+            )
+            if (len(coords) < 10 and touches_boundary) or (
                 self._height_length_condition(height=height, length=length)
-                and self._touches_boundary(binary_crop=binary_crop, blob=blob)
-                and self._low_longest_distance_from_boundary(crop=binary_crop, blob=blob)
+                and touches_boundary
+                and self._low_longest_distance_from_boundary(
+                    crop=binary_crop, blob=blob
+                )
                 and not self._closely_square(height=height, length=length)
             ):
                 # Remove blob
-                coords = blob.coords
+
                 crop[coords[:, 0], coords[:, 1]] = 0
         return crop
-    
-    def _low_longest_distance_from_boundary(self, crop: np.ndarray, blob: RegionProperties):
+
+    def _low_longest_distance_from_boundary(
+        self, crop: np.ndarray, blob: RegionProperties
+    ):
         n = min(crop.shape)
         return self._maximum_distance_from_boundary(crop=crop, blob=blob) < n * 0.3
-    
+
     def _maximum_distance_from_boundary(self, crop: np.ndarray, blob: RegionProperties):
         n, m = crop.shape
         row_boundaries = [0, n - 1]
         col_boundaries = [0, m - 1]
         rows, cols = blob.coords.transpose()
 
-        rows_distance_to_boundary = self._min_distance_to_boundary(indices=rows, boundaries=row_boundaries)
-        cols_distance_to_boundary = self._min_distance_to_boundary(indices=cols, boundaries=col_boundaries)
+        rows_distance_to_boundary = self._min_distance_to_boundary(
+            indices=rows, boundaries=row_boundaries
+        )
+        cols_distance_to_boundary = self._min_distance_to_boundary(
+            indices=cols, boundaries=col_boundaries
+        )
         # Concatenate
-        concatenated = np.concatenate([rows_distance_to_boundary, cols_distance_to_boundary], axis=1)
-        min_distance_to_boundary_for_each_point = self._min_distance_to_boundary_for_each_point(concatenated)
+        concatenated = np.concatenate(
+            [rows_distance_to_boundary, cols_distance_to_boundary], axis=1
+        )
+        min_distance_to_boundary_for_each_point = (
+            self._min_distance_to_boundary_for_each_point(concatenated)
+        )
         maximum_distance = np.max(min_distance_to_boundary_for_each_point)
         return maximum_distance
 
     @staticmethod
     def _min_distance_to_boundary(indices: np.ndarray, boundaries: List[int]):
         """Get minimum distance from indices to boundaries.
-        
+
         For each index in indices, the minimum distance to a boundary is calculated.
 
         Args:
@@ -1751,11 +1871,13 @@ class PDFTextReader:
                 Minimum distance from indices to a boundary.
         """
         return np.min(np.abs(indices[:, None] - boundaries), axis=1)[:, None]
-        
+
     @staticmethod
-    def _min_distance_to_boundary_for_each_point(concatenated: np.ndarray) -> np.ndarray:
+    def _min_distance_to_boundary_for_each_point(
+        concatenated: np.ndarray,
+    ) -> np.ndarray:
         """Get minimum distance from indices to boundaries.
-        
+
         Each row in concatenated is a 2D point, where the first value
         is the shortest distance to a row boundary, and the second value
         is the shortest distance to a column boundary.
@@ -1764,10 +1886,15 @@ class PDFTextReader:
         return np.min(concatenated, axis=1)
 
     def _height_length_condition(self, height: int, length: int) -> bool:
-        return height < self.config.threshold_remove_boundary_height or length > self.config.threshold_remove_boundary_length
+        return (
+            height < self.config.threshold_remove_boundary_height
+            or length > self.config.threshold_remove_boundary_length
+        )
 
     def _closely_square(self, height: int, length: int) -> bool:
-        return abs(height - length) < self.config.threshold_remove_boundary_closely_square
+        return (
+            abs(height - length) < self.config.threshold_remove_boundary_closely_square
+        )
 
     @staticmethod
     def _touches_boundary(binary_crop: np.ndarray, blob: RegionProperties) -> bool:
@@ -1833,6 +1960,7 @@ class PDFTextReader:
             row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
             first_box = {
                 "coordinates": [row_min, col_min, row_max, col_min + split_indices[0]],
+                "crop_refined_coordinates": [0, 0, row_max, split_indices[0]],
                 "origin": "box",
             }
 
@@ -1851,6 +1979,12 @@ class PDFTextReader:
                             row_max,
                             col_min + split_index_2,
                         ],
+                        "crop_refined_coordinates": [
+                            0,
+                            split_index_1 + 1,
+                            row_max,
+                            split_index_2,
+                        ],
                         "origin": "box",
                     }
                     anonymized_boxes.append(anonymized_box_)
@@ -1860,6 +1994,12 @@ class PDFTextReader:
                 "coordinates": [
                     row_min,
                     col_min + split_indices[-1] + 1,
+                    row_max,
+                    col_max,
+                ],
+                "crop_refined_coordinates": [
+                    0,
+                    split_indices[-1] + 1,
                     row_max,
                     col_max,
                 ],
@@ -1884,26 +2024,34 @@ class PDFTextReader:
         inverted = cv2.bitwise_not(crop)
 
         binary = self._binarize(
-            inverted, threshold=self.config.threshold_binarize_split_indices
+            inverted, threshold=255 - self.config.threshold_binarize_process_crop
         )
 
         # One bool value for each column.
         # True if all pixels in column are white.
         booled = binary.all(axis=0)
+        start_idx = np.where(booled == 0)[0][0]
 
-        split_indices = []
+        cumsum_reset_0 = self._cumsum_reset_0(booled[start_idx:])
+        gap_indices = np.where(cumsum_reset_0 > self.config.threshold_gap)[0]
+        if not gap_indices.size:
+            return []
 
-        gap_length = 0
-        for i, bool_value in enumerate(booled):
-            if bool_value:
-                gap_length += 1
-            else:
-                if gap_length > self.config.threshold_max_gap:
-                    split_idx = i - 1 - gap_length // 2
-                    if split_idx > 0:
-                        split_indices.append(split_idx)
-                gap_length = 0
+        gap_indices_ = [gap_indices[0]]
+        for i in range(1, len(gap_indices)):
+            if gap_indices[i] - gap_indices[i - 1] > 1:
+                gap_indices_.append(gap_indices[i])
+
+        gap_half = self.config.threshold_gap // 2
+        split_indices = [start_idx + x - gap_half for x in gap_indices_]
         return split_indices
+
+    @staticmethod
+    def _cumsum_reset_0(a):
+        mask = a == 0
+        cumsum = a.cumsum()
+        result = cumsum - np.maximum.accumulate(np.where(mask, cumsum, 0))
+        return result
 
     @staticmethod
     def _add_boundary(image: np.ndarray, padding: int = 1) -> np.ndarray:

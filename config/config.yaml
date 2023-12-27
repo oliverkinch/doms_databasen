@@ -46,13 +46,17 @@ indices_to_split_row_diff: 30
 max_scale: 3.3
 min_scale: 0.8
 
+anonymized_box_crop_padding: 2
+
+refine_box_padding: 2
+
 threshold_binarize_anonymized_boxes: 100
 threshold_binarize_split_indices: 100
 threshold_binarize_empty_box: 100
 threshold_binarize_top_page: 230
-threshold_max_gap: 15
+threshold_gap: 14
 threshold_box_confidence: 0.3
-threshold_binarize_process_crop: 100
+threshold_binarize_process_crop: 200
 threshold_remove_boundary_height: 20
 threshold_remove_boundary_length: 50
 threshold_remove_boundary_closely_square: 3

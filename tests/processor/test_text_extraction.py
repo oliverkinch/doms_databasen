@@ -159,6 +159,7 @@ def test_read_text_from_anonymized_box(
     )
     assert anonymized_box["text"] == text_expected
 
+
 @pytest.mark.parametrize(
     "image_path, n_matches_expected",
     [
@@ -185,9 +186,9 @@ def test_remove_boundary_noise(pdf_text_reader, config, image_path):
     N, M = image.shape
     binary_image = pdf_text_reader._remove_boundary_noise(image)
     assert (image[:, 0] <= config.threshold_binarize_process_crop).all()
-    assert (image[:, M - 1]<= config.threshold_binarize_process_crop).all()
-    assert (image[0, :]<= config.threshold_binarize_process_crop).all()
-    assert (image[N - 1, :]<= config.threshold_binarize_process_crop).all()
+    assert (image[:, M - 1] <= config.threshold_binarize_process_crop).all()
+    assert (image[0, :] <= config.threshold_binarize_process_crop).all()
+    assert (image[N - 1, :] <= config.threshold_binarize_process_crop).all()
 
 
 @pytest.mark.parametrize(
@@ -255,15 +256,22 @@ def test_remove_logo(pdf_text_reader, image_path, difference_flag_expected):
 
 
 @pytest.mark.parametrize(
-    "image_path, n_tables_expected",
+    "image_path, n_tables_expected, texts_in_table_expected",
     [
-        ("tests/data/processor/page_with_table.png", 1),
+        (
+            "tests/data/processor/page_with_table.png",
+            1,
+            ["Geografisk", "Medlemsstat", "Fiskeriart"],
+        ),
     ],
 )
-def test_find_tables(pdf_text_reader, image_path, n_tables_expected):
+def test_find_tables(
+    pdf_text_reader, image_path, n_tables_expected, texts_in_table_expected
+):
     image = read_image(image_path)
     table_boxes = pdf_text_reader._find_tables(image=image)
     assert len(table_boxes) == n_tables_expected
+    assert all(text in table_boxes[0]["text"] for text in texts_in_table_expected)
 
 
 @pytest.mark.parametrize(
@@ -279,4 +287,4 @@ def test_get_row_indices_to_split(pdf_text_reader, image_path, rows_to_split_exp
 
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_remove_boundary_noise"])
+    pytest.main([__file__ + "::test_get_row_indices_to_split"])
