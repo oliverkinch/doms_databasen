@@ -873,7 +873,9 @@ class PDFTextReader:
 
         filled[filled < 5] = 0
         opened = cv2.morphologyEx(filled, cv2.MORPH_OPEN, np.ones((30, 30)))
-        opened_binary = self._binarize(image=opened, threshold=1, val_min=0, val_max=255)
+        opened_binary = self._binarize(
+            image=opened, threshold=1, val_min=0, val_max=255
+        )
         opened_binary_dilated = cv2.dilate(opened_binary, np.ones((3, 3)))
 
         for anonymized_box in anonymized_boxes:

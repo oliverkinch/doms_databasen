@@ -209,7 +209,10 @@ def test_get_split_indices(pdf_text_reader, image_path, n_splits_expected):
 @pytest.mark.parametrize(
     "image_path, n_duplicates_expected",
     [
-        ("tests/data/processor/double_underline.png", 0), 
+        (
+            "tests/data/processor/double_underline.png",
+            0,
+        ),  # From e02382f, the smallest underline is now not found
     ],
 )
 def test_no_boxes_with_too_much_overlap(
