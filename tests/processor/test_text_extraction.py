@@ -270,7 +270,7 @@ def test_remove_logo(pdf_text_reader, image_path, difference_flag_expected):
             "tests/data/processor/page_with_no_table.png",
             0,
             [],
-        )
+        ),
     ],
 )
 def test_find_tables(

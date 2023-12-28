@@ -313,16 +313,16 @@ class PDFTextReader:
         table_boxes = [self._table_to_box_format(table) for table in tables]
 
         return table_boxes
-    
+
     def _process_before_table_search(self, image: np.ndarray) -> np.ndarray:
         """Process image before searching for tables.
-        
+
         Keep only vertical and horizontal lines.
 
         Args:
             image (np.ndarray):
                 Image to process.
-            
+
         Returns:
             image_processed (np.ndarray):
                 Processed image to search for tables in.
@@ -331,17 +331,11 @@ class PDFTextReader:
         t = self.config.threshold_binarize_process_before_table_search
         binary = self._binarize(image=inverted, threshold=t, val_min=0, val_max=255)
 
-        open_v = cv2.morphologyEx(
-            binary, cv2.MORPH_OPEN, np.ones((20, 1))
-        )
-        open_h = cv2.morphologyEx(
-            binary, cv2.MORPH_OPEN, np.ones((1, 30))
-        )
+        open_v = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((20, 1)))
+        open_h = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((1, 30)))
         combined = cv2.bitwise_or(open_v, open_h)
         image_processed = combined
         return image_processed
-
-
 
     def _get_coordinates(
         self, table_or_cell: List[Union[ExtractedTable, TableCell]]
