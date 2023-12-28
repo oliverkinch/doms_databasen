@@ -38,6 +38,7 @@ neighbor_distance_max: 1
 
 box_area_min: 2500
 box_height_min: 35
+box_width_min: 35
 box_accept_ratio: 0.6
 slight_shift_to_bottom: 5
 iou_overlap_threshold: 0.5
@@ -81,6 +82,7 @@ cell_multiple_lines_gap_threshold: 10
 
 table_format: grid
 remove_table_border: 7
+threshold_binarize_process_before_table_search: 1
 
 message_pdf_has_no_anonymized_boxes: >
   No anonymized boxes detected on first page 1.
@@ -136,7 +138,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "179"
+  case_id: "1148"
   all: False
   messages:
     give_correct_input: >

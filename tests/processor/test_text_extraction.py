@@ -266,6 +266,11 @@ def test_remove_logo(pdf_text_reader, image_path, difference_flag_expected):
             1,
             ["Geografisk", "Medlemsstat", "Fiskeriart"],
         ),
+        (
+            "tests/data/processor/page_with_no_table.png",
+            0,
+            [],
+        )
     ],
 )
 def test_find_tables(
@@ -290,4 +295,4 @@ def test_get_row_indices_to_split(pdf_text_reader, image_path, rows_to_split_exp
 
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_no_boxes_with_too_much_overlap"])
+    pytest.main([__file__ + "::test_find_tables"])

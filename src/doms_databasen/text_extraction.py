@@ -27,7 +27,6 @@ from src.doms_databasen.constants import (
     BOX_HEIGHT_LOWER_BOUND,
     DPI,
     LENGTH_EIGHT_LETTERS,
-    TOLERANCE_FLOOD_FILL,
 )
 
 logger = getLogger(__name__)
@@ -302,8 +301,9 @@ class PDFTextReader:
                 List of tables with coordinates and text.
         """
         with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
-            inverted = cv2.bitwise_not(image)
-            cv2.imwrite(tmp.name, inverted)
+            image_processed = self._process_before_table_search(image=image)
+
+            cv2.imwrite(tmp.name, image_processed)
             table_image = TableImage(src=tmp.name, detect_rotation=False)
             tables = table_image.extract_tables()
 
@@ -313,6 +313,35 @@ class PDFTextReader:
         table_boxes = [self._table_to_box_format(table) for table in tables]
 
         return table_boxes
+    
+    def _process_before_table_search(self, image: np.ndarray) -> np.ndarray:
+        """Process image before searching for tables.
+        
+        Keep only vertical and horizontal lines.
+
+        Args:
+            image (np.ndarray):
+                Image to process.
+            
+        Returns:
+            image_processed (np.ndarray):
+                Processed image to search for tables in.
+        """
+        inverted = cv2.bitwise_not(image)
+        t = self.config.threshold_binarize_process_before_table_search
+        binary = self._binarize(image=inverted, threshold=t, val_min=0, val_max=255)
+
+        open_v = cv2.morphologyEx(
+            binary, cv2.MORPH_OPEN, np.ones((20, 1))
+        )
+        open_h = cv2.morphologyEx(
+            binary, cv2.MORPH_OPEN, np.ones((1, 30))
+        )
+        combined = cv2.bitwise_or(open_v, open_h)
+        image_processed = combined
+        return image_processed
+
+
 
     def _get_coordinates(
         self, table_or_cell: List[Union[ExtractedTable, TableCell]]
@@ -601,7 +630,7 @@ class PDFTextReader:
             self.config.underline_height_upper_bound,
         )
 
-        # Grayscale and invert, such that underlines are white.
+        # Grayscale and invert, such that underlines are white. TODO HARDCODINGS
         inverted = cv2.bitwise_not(image)
         binary = self._binarize(image=inverted, threshold=255, val_min=0, val_max=255)
 
@@ -1448,7 +1477,7 @@ class PDFTextReader:
                 continue
 
             assert (
-                40 < blob.bbox[2] - blob.bbox[0] < 80
+                40 < blob.bbox[2] - blob.bbox[0] < 110
             ), "Box height is not in expected range?"
             anonymized_box = {
                 "coordinates": [*blob.bbox],
@@ -1465,10 +1494,12 @@ class PDFTextReader:
 
     def _conditions_for_box(self, blob: RegionProperties):
         box_height = blob.bbox[2] - blob.bbox[0]
+        box_width = blob.bbox[3] - blob.bbox[1]
 
         return (
             blob.area_filled / blob.area_bbox > self.config.box_accept_ratio
             and box_height > self.config.box_height_min
+            and box_width > self.config.box_width_min
         )
 
     def _split_boxes_in_image(self, inverted: np.ndarray) -> np.ndarray:
@@ -2168,6 +2199,14 @@ def draw_box(image, box, pixel_value=0):
     image = image.copy()
     if isinstance(box, dict):
         row_min, col_min, row_max, col_max = box["coordinates"]
+        image[row_min:row_max, col_min:col_max] = pixel_value
+    elif isinstance(box, ExtractedTable):
+        row_min, col_min, row_max, col_max = (
+            box.bbox.y1,
+            box.bbox.x1,
+            box.bbox.y2,
+            box.bbox.x2,
+        )
         image[row_min:row_max, col_min:col_max] = pixel_value
     else:
         # blob
