@@ -50,7 +50,7 @@ anonymized_box_crop_padding: 2
 
 refine_box_padding: 2
 
-threshold_binarize_anonymized_boxes: 100
+threshold_binarize_anonymized_boxes: 50
 threshold_binarize_split_indices: 100
 threshold_binarize_empty_box: 100
 threshold_binarize_top_page: 230
@@ -64,7 +64,7 @@ threshold_remove_boundary_closely_square: 3
 invert_find_anonymized_boxes: False
 invert_find_underline_anonymizations: True
 
-underline_height_lower_bound: 1
+underline_height_lower_bound: 2
 underline_height_upper_bound: 7
 underline_remove_pad: 1
 underline_box_height: 50
@@ -84,19 +84,20 @@ remove_table_border: 7
 
 message_pdf_has_no_anonymized_boxes: >
   No anonymized boxes detected on first page 1.
-  There will therefore not be searched for
+  Therefore, there will not be searched for
   anonymized boxes on the following pages.
 message_pdf_has_no_underline_anonymizations: >
   No underline anonymization detected on page 1.
-  There will therefore not be searched for
+  Therefore, there will not be searched for
   underlines anonymization on the following pages.
 message_try_use_tika: >
   No anonymization found on page 1. 
-  There will therefore be used to 
+  Tika will be used to 
   read the text.
 message_tika_failed: >
   Tika didn't work. 
-  Easyocr will be used to read the text.
+  Easyocr will be used to 
+  read the text.
 
 
 message_case_not_found: >
@@ -135,7 +136,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "1919"
+  case_id: "179"
   all: False
   messages:
     give_correct_input: >

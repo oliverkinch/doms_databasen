@@ -603,16 +603,14 @@ class PDFTextReader:
 
         # Grayscale and invert, such that underlines are white.
         inverted = cv2.bitwise_not(image)
+        binary = self._binarize(image=inverted, threshold=255, val_min=0, val_max=255)
 
         # Morphological opening.
         # Remove everything that doesn't look like an underline.
-        eroded = cv2.erode(inverted, np.ones((1, 50)), iterations=1)
+        eroded = cv2.erode(binary, np.ones((1, 50)), iterations=1)
         dilated = cv2.dilate(eroded, np.ones((1, 50)), iterations=1)
 
-        # Binarize and locate blobs
-        binary = self._binarize(image=dilated, threshold=200, val_min=0, val_max=255)
-
-        blobs = self._get_blobs(binary)
+        blobs = self._get_blobs(dilated)
 
         anonymized_boxes = []
         underlines = []
@@ -874,33 +872,28 @@ class PDFTextReader:
         filled = inverted.copy()
 
         filled[filled < 5] = 0
-        opened = cv2.morphologyEx(filled, cv2.MORPH_OPEN, np.ones((30, 1)))
+        opened = cv2.morphologyEx(filled, cv2.MORPH_OPEN, np.ones((30, 30)))
+        opened_binary = self._binarize(image=opened, threshold=1, val_min=0, val_max=255)
+        opened_binary_dilated = cv2.dilate(opened_binary, np.ones((3, 3)))
 
-        # In flood fill a tolerance of 254 is used.
-        # This means that when initiating a flood fill operation at a seed point
-        # with a value of 255, all pixels greater than 0 within the object of the seed point
-        # will be altered to 0.
         for anonymized_box in anonymized_boxes:
             row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
             center = (row_min + row_max) // 2, (col_min + col_max) // 2
-            seed_point = center
 
-            if opened[seed_point] != 255:
+            if opened[center] != 255:
                 # Box is already removed, supposedly because
                 # it overlaps with a previous box.
                 continue
 
             mask = skimage.segmentation.flood(
-                image=opened,
-                seed_point=seed_point,
-                tolerance=TOLERANCE_FLOOD_FILL,
+                image=opened_binary_dilated,
+                seed_point=center,
             )
             filled[mask] = 0
 
         pad = self.config.underline_remove_pad
         for underline in underlines:
             row_min, col_min, row_max, col_max = underline
-            seed_point = (row_min, col_min)
             # Remove underline
             filled[row_min - pad : row_max + pad, col_min - pad : col_max + pad] = 0
 

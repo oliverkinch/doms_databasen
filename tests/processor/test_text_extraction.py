@@ -209,7 +209,7 @@ def test_get_split_indices(pdf_text_reader, image_path, n_splits_expected):
 @pytest.mark.parametrize(
     "image_path, n_duplicates_expected",
     [
-        ("tests/data/processor/double_underline.png", 1),
+        ("tests/data/processor/double_underline.png", 0), 
     ],
 )
 def test_no_boxes_with_too_much_overlap(
@@ -287,4 +287,4 @@ def test_get_row_indices_to_split(pdf_text_reader, image_path, rows_to_split_exp
 
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_get_row_indices_to_split"])
+    pytest.main([__file__ + "::test_no_boxes_with_too_much_overlap"])
