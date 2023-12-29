@@ -1610,11 +1610,11 @@ class PDFTextReader:
 
     def _conditions_for_box(self, blob: RegionProperties) -> bool:
         """Checks if conditions for box are met.
-        
+
         Args:
             blob (RegionProperties):
                 Blob to check conditions for.
-        
+
         Returns:
             bool:
                 True if conditions for box are met. False otherwise.

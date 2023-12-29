@@ -55,7 +55,7 @@ def test_get_blobs(pdf_text_reader, image_path, n_blobs_expected):
     [
         ("tests/data/processor/underlines_1.png", 11),
         ("tests/data/processor/underlines_2.png", 2),
-     ],
+    ],
 )
 def test_line_anonymization_to_boxes(pdf_text_reader, image_path, n_matches_expected):
     image = read_image(image_path)
