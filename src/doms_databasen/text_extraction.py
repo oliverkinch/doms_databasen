@@ -1608,8 +1608,17 @@ class PDFTextReader:
 
         return anonymized_boxes
 
-    def _conditions_for_box(self, blob: RegionProperties):
-        # TODO
+    def _conditions_for_box(self, blob: RegionProperties) -> bool:
+        """Checks if conditions for box are met.
+        
+        Args:
+            blob (RegionProperties):
+                Blob to check conditions for.
+        
+        Returns:
+            bool:
+                True if conditions for box are met. False otherwise.
+        """
         box_height = blob.bbox[2] - blob.bbox[0]
         box_width = blob.bbox[3] - blob.bbox[1]
 
