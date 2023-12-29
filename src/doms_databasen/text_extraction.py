@@ -139,10 +139,6 @@ class PDFTextReader:
                 underlines=underlines,
             )
 
-            # TODO: Remove anonymized boxes before searching for tables.
-            # Tag kode fra `_process_image` der fjerne bokse. Output så dette billede
-            # her og giv videre til process_image, der så fjerne tabeller,
-            # og hvad der ellers er.
             table_boxes = self._find_tables(image=image_processed.copy())
 
             image_final = self._remove_tables(
@@ -666,9 +662,13 @@ class PDFTextReader:
             self.config.underline_height_upper_bound,
         )
 
-        # Grayscale and invert, such that underlines are white. TODO HARDCODINGS
         inverted = cv2.bitwise_not(image)
-        binary = self._binarize(image=inverted, threshold=255, val_min=0, val_max=255)
+        binary = self._binarize(
+            image=inverted,
+            threshold=self.config.threshold_binarize_line_anonymization,
+            val_min=0,
+            val_max=255,
+        )
 
         # Morphological opening.
         # Remove everything that doesn't look like an underline.
@@ -1522,10 +1522,6 @@ class PDFTextReader:
                 "coordinates": [*blob.bbox],
                 "origin": "box",
             }
-
-            # TODO Refine box her med _remove_boundary_noise
-            # og _refine_box? Så behøves de ikke at bruges inden
-            # at _split_box box kaldes.
 
             anonymized_boxes.append(anonymized_box)
 
