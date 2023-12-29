@@ -71,9 +71,7 @@ def test_line_anonymization_to_boxes(pdf_text_reader, image_path, n_matches_expe
         )
     ],
 )
-def test_process_image(
-    pdf_text_reader, image_path, anonymized_boxes, underlines
-):
+def test_process_image(pdf_text_reader, image_path, anonymized_boxes, underlines):
     image = read_image(image_path)
     processed_image = pdf_text_reader._process_image(
         image=image,
