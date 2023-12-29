@@ -51,6 +51,9 @@ anonymized_box_crop_padding: 2
 
 refine_box_padding: 2
 
+make_split_between_overlapping_box_and_line_height_max: 30
+make_split_between_overlapping_box_and_line_width: 10
+
 threshold_binarize_anonymized_boxes: 50
 threshold_binarize_split_indices: 100
 threshold_binarize_empty_box: 100
@@ -68,6 +71,7 @@ threshold_footnote_height: 30 # Some less than box height lb
 invert_find_anonymized_boxes: False
 invert_find_underline_anonymizations: True
 
+underline_length_min: 26
 underline_height_lower_bound: 2
 underline_height_upper_bound: 7
 underline_remove_pad: 1
@@ -146,7 +150,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "1086"
+  case_id: "2778"
   all: False
   messages:
     give_correct_input: >

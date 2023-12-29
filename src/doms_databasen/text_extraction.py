@@ -83,6 +83,7 @@ class PDFTextReader:
         text_tika = None
 
         for i, image in enumerate(images):
+            logger.info(f"Reading page {i + 1}")
             if i == 0:
                 image = self._remove_logo(image=image)
 
@@ -656,12 +657,6 @@ class PDFTextReader:
                 List of underlines with coordinates
                 (will later be used to remove the underlines from the image).
         """
-        # Bounds for height of underline.
-        lb, ub = (
-            self.config.underline_height_lower_bound,
-            self.config.underline_height_upper_bound,
-        )
-
         inverted = cv2.bitwise_not(image)
         binary = self._binarize(
             image=inverted,
@@ -670,51 +665,109 @@ class PDFTextReader:
             val_max=255,
         )
 
-        # Morphological opening.
-        # Remove everything that doesn't look like an underline.
-        eroded = cv2.erode(binary, np.ones((1, 50)), iterations=1)
-        dilated = cv2.dilate(eroded, np.ones((1, 50)), iterations=1)
-
-        blobs = self._get_blobs(dilated)
+        blobs = self._get_blobs(binary=binary, sort_function=self._blob_bottom_length)
 
         anonymized_boxes = []
         underlines = []
         for blob in blobs:
-            row_min, col_min, row_max, col_max = blob.bbox
+            if self._blob_bottom_length(blob=blob) < self.config.underline_length_min:
+                break
+            underline = self._extract_underline(blob=blob)
+            if not underline:
+                continue
 
-            # For a blob to be an underline, it should be
-            # a "perfect" rectangle.
+            row_min, col_min, _, col_max = underline
 
-            height = row_max - row_min
-            if blob.area == blob.area_bbox and lb < height < ub:
-                box_row_min = row_min - self.config.underline_box_height
-                box_row_max = row_min - 1  # Just above underline
-                box_col_min = col_min
-                box_col_max = col_max
+            box_row_min = row_min - self.config.underline_box_height
+            box_row_max = row_min - 1  # Just above underline
+            box_col_min = col_min
+            box_col_max = col_max
 
-                anonymized_box = {
-                    "coordinates": [box_row_min, box_col_min, box_row_max, box_col_max],
-                    "origin": self.config.origin_underline,
-                }
+            anonymized_box = {
+                "coordinates": [box_row_min, box_col_min, box_row_max, box_col_max],
+                "origin": self.config.origin_underline,
+            }
 
-                crop = inverted[box_row_min:box_row_max, box_col_min:box_col_max]
-                if crop.sum() == 0:
-                    # Box is empty
-                    continue
+            crop = inverted[box_row_min:box_row_max, box_col_min:box_col_max]
+            if crop.sum() == 0:
+                # Box is empty
+                continue
+            
+            box_is_duplicate = any(
+                self._too_much_overlap(box_1=anonymized_box, box_2=box)
+                for box in anonymized_boxes
+            )
+            if not box_is_duplicate:
+                anonymized_boxes.append(anonymized_box)
                 underlines.append(blob.bbox)
 
-                box_is_duplicate = any(
-                    self._too_much_overlap(box_1=anonymized_box, box_2=box)
-                    for box in anonymized_boxes
-                )
-                if not box_is_duplicate:
-                    anonymized_boxes.append(anonymized_box)
-
         return anonymized_boxes, underlines
+    
+    def _extract_underline(self, blob: RegionProperties) -> Union[tuple, bool]:
+        rows, cols = blob.coords.transpose()
+        col_min = cols.min()
+        col_max = cols.max()
+        rows_at_col_min = rows[cols == col_min]
+        rows_at_col_max = rows[cols == col_max]
+
+        if not (rows_at_col_min == rows_at_col_max).all():
+            return False
+        
+        row_min = rows_at_col_min.min()
+        row_max = rows_at_col_min.max()
+
+        def _perfect_rectangle():
+            n_pixels = sum(len(cols[rows == row]) for row in rows_at_col_min)
+            x = col_max - col_min + 1
+            y = row_max - row_min + 1
+            if x * y == n_pixels:
+                return True
+            
+        if not _perfect_rectangle():
+            return False
+        
+        # Bounds for height of underline.
+        lb, ub = (
+            self.config.underline_height_lower_bound,
+            self.config.underline_height_upper_bound,
+        )
+        height = row_max - row_min + 1
+        if not lb < height < ub:
+            return False
+
+        return row_min, col_min, row_max, col_max
+
+    @staticmethod
+    def _blob_bottom_length(blob: RegionProperties) -> int:
+        """Number of pixels in the bottom row of the blob.
+        
+        Args:
+            blob (RegionProperties):
+                Blob to get length of.
+
+        Returns:    
+            int:
+                Number of pixels in the bottom row of the blob.
+        """
+        rows, _ = blob.coords.transpose()
+        last_row = rows.max()
+        last_row_indices = np.where(rows == last_row)[0]
+        length = len(last_row_indices)
+        return length
 
     def _make_split_between_overlapping_box_and_line(
         self, binary: np.ndarray
     ) -> np.ndarray:
+        """Make split between overlapping box and underline.
+        
+        Args:
+            binary (np.ndarray):
+                Binary image.
+
+        Returns:
+            binary (np.ndarray):
+                Binary image with split between overlapping box and underline.
+        """
         edges = self._get_vertical_edges(binary=binary)
         sort_function = lambda blob: blob.bbox[2] - blob.bbox[0]
         edge_blobs = self._get_blobs(binary=edges, sort_function=sort_function)
@@ -723,12 +776,12 @@ class PDFTextReader:
         for blob in edge_blobs:
             row_min, col_min, row_max, col_max = blob.bbox
             height = row_max - row_min
-            if height < 30:
+            if height < self.config.make_split_between_overlapping_box_and_line_height_max:
                 break
             heights.append(height)
 
             row_min, col_min, row_max, col_max = blob.bbox
-            p = 10
+            p = self.config.make_split_between_overlapping_box_and_line_width
             binary[row_min - p : row_max + p, col_min:col_max] = 0
         return binary
 
@@ -1276,7 +1329,7 @@ class PDFTextReader:
                 refine_padding=self.config.anonymized_box_crop_padding,
             )
             text = self._read_text_from_crop(crop=crop_to_read)
-            anonymized_box["text"] = f"<anonym>{text}</anonym>"
+            anonymized_box["text"] = f"<anonym>{text}</anonym>" if text else ""
             return anonymized_box
 
         texts = []
