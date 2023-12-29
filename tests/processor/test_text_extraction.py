@@ -94,7 +94,7 @@ def test_process_image(pdf_text_reader, image_path, anonymized_boxes, underlines
         (
             [
                 {"coordinates": (0, 0, 30, 75), "text": "Hej"},
-                {"coordinates": (3100, 1300, 3150, 1350), "text": "smukke"},
+                {"coordinates": (3100, 1300, 3125, 1350), "text": "smukke"},
             ],
             "Hej",
         ),
@@ -110,37 +110,37 @@ def test_get_text_from_boxes(pdf_text_reader, boxes, text_expected):
     [
         (
             "tests/data/processor/underlines.png",
-            {"coordinates": (2863, 296, 2898, 490)},
+            {"coordinates": (2863, 296, 2898, 490), "origin": "underline"},
             True,
             "<anonym>Tiltalte 2</anonym>",
         ),
         (
             "tests/data/processor/underlines.png",
-            {"coordinates": (1186, 296, 1221, 490)},
+            {"coordinates": (1186, 296, 1221, 490), "origin": "underline"},
             True,
             "<anonym>CPR nr. 1</anonym>",
         ),
         (
             "tests/data/processor/get_text_from_box.png",
-            {"coordinates": [1007, 552, 1040, 583]},
+            {"coordinates": [1007, 552, 1040, 583], "origin": "box"},
             False,
             "<anonym>Ø</anonym>",
         ),
         (
             "tests/data/processor/get_text_from_box_2.png",
-            {"coordinates": [1169, 274, 1213, 359]},
+            {"coordinates": [1169, 274, 1213, 359], "origin": "underline"},
             True,
             "<anonym>By 1</anonym>",
         ),
         (
             "tests/data/processor/get_text_from_box_3.png",
-            {"coordinates": [886, 1945, 926, 2210]},
+            {"coordinates": [886, 1945, 926, 2210], "origin": "box"},
             False,
             "<anonym>Person 5 (P5)</anonym>",
         ),
         (
             "tests/data/processor/get_text_from_box_4.png",
-            {"coordinates": [562, 1206, 624, 1673]},
+            {"coordinates": [562, 1206, 624, 1673], "origin": "box"},
             False,
             "<anonym>Sagsøgte 2's</anonym>",
         ),

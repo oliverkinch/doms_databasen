@@ -63,6 +63,8 @@ threshold_remove_boundary_length: 50
 threshold_remove_boundary_closely_square: 3
 threshold_remove_boundary_too_few_pixels: 10
 
+threshold_footnote_height: 30 # Some less than box height lb
+
 invert_find_anonymized_boxes: False
 invert_find_underline_anonymizations: True
 
@@ -70,6 +72,7 @@ underline_height_lower_bound: 2
 underline_height_upper_bound: 7
 underline_remove_pad: 1
 underline_box_height: 50
+underline_box_height_min: 34
 threshold_binarize_line_anonymization: 255
 
 line_start_ignore_col: 1200
@@ -85,6 +88,9 @@ cell_multiple_lines_gap_threshold: 10
 table_format: grid
 remove_table_border: 7
 threshold_binarize_process_before_table_search: 1
+
+origin_box: box
+origin_underline: underline
 
 message_pdf_has_no_anonymized_boxes: >
   No anonymized boxes detected on first page 1.
@@ -140,7 +146,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "1148"
+  case_id: "1086"
   all: False
   messages:
     give_correct_input: >

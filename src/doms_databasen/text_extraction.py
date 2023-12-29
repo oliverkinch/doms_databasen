@@ -694,7 +694,7 @@ class PDFTextReader:
 
                 anonymized_box = {
                     "coordinates": [box_row_min, box_col_min, box_row_max, box_col_max],
-                    "origin": "underline",
+                    "origin": self.config.origin_underline,
                 }
 
                 crop = inverted[box_row_min:box_row_max, box_col_min:box_col_max]
@@ -1140,10 +1140,12 @@ class PDFTextReader:
             bool:
                 True if line is a footnote. False otherwise.
         """
-        row_min, col_min, _, _ = first_box["coordinates"]
+        row_min, col_min, row_max, _ = first_box["coordinates"]
+        height = row_max - row_min
         return (
             col_min > self.config.line_start_ignore_col
             and row_min > self.config.line_start_ignore_row
+            and height < self.config.threshold_footnote_height
         )
 
     @staticmethod
@@ -1251,9 +1253,12 @@ class PDFTextReader:
             padding=self.config.anonymized_box_crop_padding,
             binary_threshold=self.config.threshold_binarize_process_crop,
         )
-        if self._empty_image(
-            image=crop_refined,
-            binarize_threshold=self.config.threshold_binarize_process_crop,
+        if (
+            self._empty_image(
+                image=crop_refined,
+                binarize_threshold=self.config.threshold_binarize_process_crop,
+            )
+            or self._too_small(crop=crop_refined, anonymized_box=anonymized_box_refined)
         ):
             anonymized_box["text"] = ""
             return anonymized_box
@@ -1300,6 +1305,25 @@ class PDFTextReader:
 
         anonymized_box["text"] = f"<anonym>{text_all}</anonym>" if text_all else ""
         return anonymized_box
+
+    def _too_small(self, crop: np.ndarray, anonymized_box: dict) -> bool:
+        """Determine if crop/box is too small to be classified as relevant.
+
+        This is only necessary for anonymized boxes from underlines, as the
+        normal anonymized boxes are already filtered by this constraint.
+
+        Args:
+            crop (np.ndarray):
+                Crop (representing anonymized box) to be processed.
+
+        Returns:
+            bool:
+                True if crop is too small. False otherwise.
+        """
+        return (
+            crop.shape[0] < self.config.underline_box_height_min
+            and anonymized_box["origin"] == self.config.origin_underline
+        )
 
     def _read_text_from_crop(self, crop: np.ndarray) -> str:
         """Read text from crop.
@@ -1465,7 +1489,8 @@ class PDFTextReader:
                 box["coordinates"][1] + col_first_,
                 box["coordinates"][2] - (n - row_last_),
                 box["coordinates"][3] - (m - col_last_),
-            )
+            ),
+            "origin": box["origin"],
         }
 
         return crop_refined, box_refined
@@ -1520,19 +1545,20 @@ class PDFTextReader:
             ), "Box height is not in expected range?"
             anonymized_box = {
                 "coordinates": [*blob.bbox],
-                "origin": "box",
+                "origin": self.config.origin_box,
             }
-
+            # Draw box test case 1086 p 1
             anonymized_boxes.append(anonymized_box)
 
         return anonymized_boxes
 
     def _conditions_for_box(self, blob: RegionProperties):
+        # TODO
         box_height = blob.bbox[2] - blob.bbox[0]
         box_width = blob.bbox[3] - blob.bbox[1]
 
         return (
-            blob.area_filled / blob.area_bbox > self.config.box_accept_ratio
+            blob.area_convex / blob.area_bbox > self.config.box_accept_ratio
             and box_height > self.config.box_height_min
             and box_width > self.config.box_width_min
         )
@@ -2068,6 +2094,7 @@ class PDFTextReader:
                 List of anonymized boxes - one for each word of the input box.
         """
         split_indices = self._get_split_indices(crop=crop)
+        origin = anonymized_box["origin"]
         if not split_indices:
             return [anonymized_box]
         else:
@@ -2077,7 +2104,7 @@ class PDFTextReader:
             first_box = {
                 "coordinates": [row_min, col_min, row_max, col_min + split_indices[0]],
                 "crop_refined_coordinates": [0, 0, row_max, split_indices[0]],
-                "origin": "box",
+                "origin": origin,
             }
 
             anonymized_boxes.append(first_box)
@@ -2101,7 +2128,7 @@ class PDFTextReader:
                             row_max,
                             split_index_2,
                         ],
-                        "origin": "box",
+                        "origin": origin,
                     }
                     anonymized_boxes.append(anonymized_box_)
 
@@ -2119,7 +2146,7 @@ class PDFTextReader:
                     row_max,
                     col_max,
                 ],
-                "origin": "box",
+                "origin": origin,
             }
             anonymized_boxes.append(last_box)
         return anonymized_boxes
