@@ -61,6 +61,7 @@ threshold_binarize_process_crop: 200
 threshold_remove_boundary_height: 20
 threshold_remove_boundary_length: 50
 threshold_remove_boundary_closely_square: 3
+threshold_remove_boundary_too_few_pixels: 10
 
 invert_find_anonymized_boxes: False
 invert_find_underline_anonymizations: True

@@ -133,17 +133,21 @@ class PDFTextReader:
 
             all_anonymized_boxes = anonymized_boxes + anonymized_boxes_underlines
 
-            table_boxes = self._find_tables(image=image.copy())
-
-            # Remove anonymized boxes and tables from image
             image_processed = self._process_image(
                 image=image.copy(),
                 anonymized_boxes=all_anonymized_boxes,
                 underlines=underlines,
-                table_boxes=table_boxes,
-            )
+            )     
 
-            main_text_boxes = self._get_main_text_boxes(image=image_processed)
+            # TODO: Remove anonymized boxes before searching for tables.
+            # Tag kode fra `_process_image` der fjerne bokse. Output så dette billede
+            # her og giv videre til process_image, der så fjerne tabeller,
+            # og hvad der ellers er.
+            table_boxes = self._find_tables(image=image_processed.copy())
+
+            image_final = self._remove_tables(image=image_processed, table_boxes=table_boxes)
+
+            main_text_boxes = self._get_main_text_boxes(image=image_final)
 
             # Merge all boxes
             all_boxes = main_text_boxes + all_anonymized_boxes + table_boxes
@@ -300,9 +304,8 @@ class PDFTextReader:
             table_boxes (List[dict]):
                 List of tables with coordinates and text.
         """
+        image_processed = self._process_before_table_search(image=image)
         with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
-            image_processed = self._process_before_table_search(image=image)
-
             cv2.imwrite(tmp.name, image_processed)
             table_image = TableImage(src=tmp.name, detect_rotation=False)
             tables = table_image.extract_tables()
@@ -328,13 +331,17 @@ class PDFTextReader:
                 Processed image to search for tables in.
         """
         inverted = cv2.bitwise_not(image)
+
         t = self.config.threshold_binarize_process_before_table_search
         binary = self._binarize(image=inverted, threshold=t, val_min=0, val_max=255)
 
-        open_v = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((20, 1)))
-        open_h = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((1, 30)))
+        open_v = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((10, 1)))
+        open_h = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((1, 20)))
         combined = cv2.bitwise_or(open_v, open_h)
-        image_processed = combined
+
+        invert_back = cv2.bitwise_not(combined)
+
+        image_processed = invert_back
         return image_processed
 
     def _get_coordinates(
@@ -406,13 +413,13 @@ class PDFTextReader:
         inverted = cv2.bitwise_not(image)
         cell_box = self._cell_to_box(cell)
         crop = self._box_to_crop(box=cell_box, image=inverted)
+        if self._empty_image(image=crop, binarize_threshold=self.config.threshold_binarize_empty_box):
+            cell.value = ""
+            return
+        
         binary = self._binarize(
             image=crop, threshold=self.config.threshold_binarize_empty_box
         )
-        if binary.sum() == 0:
-            cell.value = ""
-            return
-
         split_indices = self._multiple_lines(binary=binary)
         if not split_indices:
             cell_boxes = [cell_box]
@@ -424,23 +431,32 @@ class PDFTextReader:
         all_text = ""
         for cell_box_ in cell_boxes:
             crop = self._box_to_crop(box=cell_box_, image=inverted)
-            crop_refined, _ = self._refine_box(
-                box=cell_box_,
-                crop=crop,
-                binary_threshold=self.config.threshold_binarize_empty_box,
-            )
+            if self._empty_image(image=crop, binarize_threshold=self.config.threshold_binarize_empty_box):
+                continue
+            crop_to_read = self._process_crop_before_read(crop=crop, binary_threshold=self.config.threshold_binarize_empty_box, refine_padding=self.config.cell_box_crop_padding)
 
-            # crop_refined = inverted[row_min:row_max, col_min:col_max]
-            crop_boundary = self._add_boundary(
-                image=crop_refined, padding=self.config.cell_box_crop_padding
-            )
-
-            text = self._read_text(crop_boundary)
+            text = self._read_text(crop_to_read)
             all_text = self._add_text(text, all_text)
 
         # Remove last newline character
         all_text = all_text[:-1] if all_text[-1:] == "\n" else all_text
         cell.value = all_text
+
+    def _empty_image(self, image: np.ndarray, binarize_threshold: int) -> bool:
+        """Determine if image is empty.
+
+        Args:
+            image (np.ndarray):
+                Image to determine if is empty.
+            binarize_threshold (int):
+                Threshold to binarize image with.
+
+        Returns:
+            bool:
+                True if image is empty. False otherwise.
+        """
+        binary = self._binarize(image=image, threshold=binarize_threshold)
+        return binary.sum() == 0
 
     def _read_text(self, crop_refined: np.ndarray) -> str:
         """Read text from subimage of cell.
@@ -458,12 +474,28 @@ class PDFTextReader:
         if not result:
             text = ""
         else:
+            # Sort w.r.t x-coordinate
+            result = self._sort_result_by_x(result=result)
+
             text = result[0][1]
             for box in result[1:]:
                 box_text = box[1]
                 sep = "" if text[-1] == "-" else " "
                 text += f"{sep}{box_text}"
         return f"{text}\n"
+    
+    def _sort_result_by_x(self, result: List[tuple]) -> List[tuple]:
+        """Sort result from easyocr by x-coordinate.
+        
+        Args:
+            result (List[tuple]):
+                Result from easyocr using `reader.readtext()`.
+        
+        Returns:
+            result (List[tuple]):
+                Result sorted by x-coordinate.
+        """
+        return sorted(result, key=lambda x: x[0][0][0])
 
     def _add_text(self, text: str, all_text: str) -> str:
         """Add text from subimage of cell to all text from cell.
@@ -855,8 +887,7 @@ class PDFTextReader:
         self,
         image: np.ndarray,
         anonymized_boxes: List[dict],
-        underlines: List[tuple],
-        table_boxes,
+        underlines: List[tuple]
     ) -> np.ndarray:
         """Prepare image for easyocr to read the main text (all non-anonymized text).
 
@@ -921,9 +952,6 @@ class PDFTextReader:
             row_min, col_min, row_max, col_max = underline
             # Remove underline
             filled[row_min - pad : row_max + pad, col_min - pad : col_max + pad] = 0
-
-        # Remove tables
-        filled = self._remove_tables(image=filled, table_boxes=table_boxes)
 
         # Increase size of letters slightly
         dilated = cv2.dilate(filled, np.ones((2, 2)))
@@ -1195,22 +1223,25 @@ class PDFTextReader:
         if invert:
             image = cv2.bitwise_not(image)
 
-        image_binary = self._binarize(
-            image=image,
-            threshold=self.config.threshold_binarize_empty_box,
-            val_min=0,
-            val_max=255,
-        )
-
         crop = self._box_to_crop(box=anonymized_box, image=image)
+        if self._empty_image(image=crop, binarize_threshold=self.config.threshold_binarize_process_crop):
+            anonymized_box["text"] = ""
+            return anonymized_box
 
         crop_cleaned = self._remove_boundary_noise(crop=crop.copy())
+        if self._empty_image(image=crop_cleaned, binarize_threshold=self.config.threshold_binarize_process_crop):
+            anonymized_box["text"] = ""
+            return anonymized_box
+        
         crop_refined, anonymized_box_refined = self._refine_box(
             crop=crop_cleaned,
             box=anonymized_box,
             padding=self.config.anonymized_box_crop_padding,
             binary_threshold=self.config.threshold_binarize_process_crop,
         )
+        if self._empty_image(image=crop_refined, binarize_threshold=self.config.threshold_binarize_process_crop):
+            anonymized_box["text"] = ""
+            return anonymized_box
 
         # Make a box for each word in the box
         # I get better results with easyocr using this approach.
@@ -1221,6 +1252,7 @@ class PDFTextReader:
         if len(anonymized_boxes) == 1:
             crop_to_read = self._process_crop_before_read(
                 crop=crop_refined,
+                binary_threshold=self.config.threshold_binarize_process_crop,
                 refine_padding=self.config.anonymized_box_crop_padding,
             )
             text = self._read_text_from_crop(crop=crop_to_read)
@@ -1228,23 +1260,15 @@ class PDFTextReader:
             return anonymized_box
 
         texts = []
-        # `anonymized_boxes` are sorted left to right
-        # E.g. the first box will contain the first word of `anonymized_box`.
         for anonymized_box_ in anonymized_boxes:
-            crop_binary = self._box_to_crop(box=anonymized_box_, image=image_binary)
-
-            if crop_binary.sum() == 0:
-                # `_split_box` might output boxes that are empty.
-                # Could change `_split_box` such that it doesn't output empty boxes,
-                # such that this if statement is not needed.
-                texts.append("")
-                continue
-
             crop = self._box_refined_to_crop(
                 box_refined=anonymized_box_, crop_refined=crop_refined
             )
+            if self._empty_image(image=crop, binarize_threshold=self.config.threshold_binarize_process_crop):
+                continue
+
             crop_to_read = self._process_crop_before_read(
-                crop=crop, refine_padding=self.config.anonymized_box_crop_padding
+                crop=crop, binary_threshold=self.config.threshold_binarize_process_crop, refine_padding=self.config.anonymized_box_crop_padding
             )
 
             # Read text from image with easyocr
@@ -1273,6 +1297,7 @@ class PDFTextReader:
         if len(result) == 0:
             text = ""
         else:
+            result = self._sort_result_by_x(result=result)
             text = " ".join(
                 [
                     box[1]
@@ -1307,7 +1332,7 @@ class PDFTextReader:
         return crop
 
     def _process_crop_before_read(
-        self, crop: np.ndarray, refine_padding: int = 0
+        self, crop: np.ndarray, binary_threshold: int, refine_padding: int = 0
     ) -> np.ndarray:
         """Processes crop before reading text with easyocr.
 
@@ -1324,13 +1349,13 @@ class PDFTextReader:
         if refine_padding:
             crop_refined, _ = self._refine_box(
                 crop=crop,
-                binary_threshold=self.config.threshold_binarize_process_crop,
+                binary_threshold=binary_threshold,
                 padding=refine_padding,
             )
         else:
             crop_refined = crop
 
-        box_length = crop.shape[1]
+        box_length = crop_refined.shape[1]
         scale = self._get_scale(box_length=box_length)
         crop_scaled = self._scale_image(image=crop_refined, scale=scale)
         crop_boundary = self._add_boundary(
@@ -1398,8 +1423,8 @@ class PDFTextReader:
             val_min=0,
             val_max=255,
         )
-        # self.config.threshold_binarize_process_crop
         rows, cols = np.where(binary > 0)
+
         col_first, col_last = cols.min(), cols.max()
         row_first, row_last = rows.min(), rows.max()
         p = padding
@@ -1828,12 +1853,11 @@ class PDFTextReader:
             row_min, col_min, row_max, col_max = blob.bbox
             height = row_max - row_min
             length = col_max - col_min
-            coords = blob.coords
 
             touches_boundary = self._touches_boundary(
                 binary_crop=binary_crop, blob=blob
             )
-            if (len(coords) < 10 and touches_boundary) or (
+            if self._too_few_pixels(blob=blob, touches_boundary=touches_boundary) or (
                 self._height_length_condition(height=height, length=length)
                 and touches_boundary
                 and self._low_longest_distance_from_boundary(
@@ -1842,17 +1866,68 @@ class PDFTextReader:
                 and not self._closely_square(height=height, length=length)
             ):
                 # Remove blob
-
+                coords = blob.coords
                 crop[coords[:, 0], coords[:, 1]] = 0
         return crop
+    
+    def _too_few_pixels(self, blob: RegionProperties, touches_boundary: bool) -> bool:
+        """Checks if blob has too few pixels to be a relevant character.
+        
+        Used in _remove_boundary_noise to determine if a blob is noise or not.
+
+        Args:
+            blob (skimage.measure._regionprops._RegionProperties):
+                A blob in the image.
+            touches_boundary (bool):
+                Whether blob touches the boundary of the image or not.
+
+        Returns:
+            bool:
+                True if blob has too few pixels to be a relevant character. False otherwise.
+        """
+        coords = blob.coords
+        return len(coords) < self.config.threshold_remove_boundary_too_few_pixels and touches_boundary
 
     def _low_longest_distance_from_boundary(
         self, crop: np.ndarray, blob: RegionProperties
-    ):
+    ) -> bool:
+        """Checks if blob has a low longest distance from the boundary of the image.
+        
+        Used in _remove_boundary_noise to determine if a blob is noise or not.
+
+        Args:
+            crop (np.ndarray):
+                Anonymized box.
+            blob (skimage.measure._regionprops._RegionProperties):
+                A blob in the image.
+
+        Returns:
+            bool:
+                True if blob has a low longest distance from the boundary of the image. False otherwise.
+        """
         n = min(crop.shape)
         return self._maximum_distance_from_boundary(crop=crop, blob=blob) < n * 0.3
 
-    def _maximum_distance_from_boundary(self, crop: np.ndarray, blob: RegionProperties):
+    def _maximum_distance_from_boundary(self, crop: np.ndarray, blob: RegionProperties) -> float:
+        """Get maximum distance from blob to boundary of image.
+
+        E.g. if the minimum distance from the blob to the top boundary of the image is 5,
+        and the minimum distance from the blob to the bottom boundary of the image is 10,
+        to the left boundary is 3, and to the right boundary is 7, then the maximum distance
+        from the blob to the boundary of the image is 10.
+        
+        Used in _remove_boundary_noise to determine if a blob is noise or not.
+
+        Args:
+            crop (np.ndarray):
+                Anonymized box.
+            blob (skimage.measure._regionprops._RegionProperties):
+                A blob in the image.
+
+        Returns:
+            float:
+                Maximum distance from blob to boundary of image.
+        """
         n, m = crop.shape
         row_boundaries = [0, n - 1]
         col_boundaries = [0, m - 1]

@@ -62,25 +62,23 @@ def test_line_anonymization_to_boxes(pdf_text_reader, image_path, n_matches_expe
 
 
 @pytest.mark.parametrize(
-    "image_path, anonymized_boxes, underlines, table_boxes",
+    "image_path, anonymized_boxes, underlines",
     [
         (
             "tests/data/processor/underlines.png",
             [{"coordinates": (0, 0, 15, 15)}],
             [(20, 20, 22, 30)],
-            [],
         )
     ],
 )
 def test_process_image(
-    pdf_text_reader, image_path, anonymized_boxes, underlines, table_boxes
+    pdf_text_reader, image_path, anonymized_boxes, underlines
 ):
     image = read_image(image_path)
     processed_image = pdf_text_reader._process_image(
         image=image,
         anonymized_boxes=anonymized_boxes,
         underlines=underlines,
-        table_boxes=table_boxes,
     )
     assert isinstance(processed_image, np.ndarray)
 
@@ -177,18 +175,18 @@ def test_find_anonymized_boxes(pdf_text_reader, image_path, n_matches_expected):
 @pytest.mark.parametrize(
     "image_path",
     [
-        ("tests/data/processor/boundary_noise.png"),
+        ("tests/data/processor/boundary_noise_1.png"),
         ("tests/data/processor/boundary_noise_2.png"),
     ],
 )
 def test_remove_boundary_noise(pdf_text_reader, config, image_path):
     image = read_image(image_path)
     N, M = image.shape
-    binary_image = pdf_text_reader._remove_boundary_noise(image)
-    assert (image[:, 0] <= config.threshold_binarize_process_crop).all()
-    assert (image[:, M - 1] <= config.threshold_binarize_process_crop).all()
-    assert (image[0, :] <= config.threshold_binarize_process_crop).all()
-    assert (image[N - 1, :] <= config.threshold_binarize_process_crop).all()
+    image_clean = pdf_text_reader._remove_boundary_noise(image.copy())
+    assert (image_clean[:, 0] <= config.threshold_binarize_process_crop).all()
+    assert (image_clean[:, M - 1] <= config.threshold_binarize_process_crop).all()
+    assert (image_clean[0, :] <= config.threshold_binarize_process_crop).all()
+    assert (image_clean[N - 1, :] <= config.threshold_binarize_process_crop).all()
 
 
 @pytest.mark.parametrize(
@@ -258,16 +256,22 @@ def test_remove_logo(pdf_text_reader, image_path, difference_flag_expected):
     assert difference_flag == difference_flag_expected
 
 
+# Remake images for this test where anonymized boxes are removed.
 @pytest.mark.parametrize(
     "image_path, n_tables_expected, texts_in_table_expected",
     [
         (
-            "tests/data/processor/page_with_table.png",
+            "tests/data/processor/image_processed_find_tables_1.png",
             1,
             ["Geografisk", "Medlemsstat", "Fiskeriart"],
         ),
         (
-            "tests/data/processor/page_with_no_table.png",
+            "tests/data/processor/image_processed_find_tables_2.png",
+            1,
+            ["Eng.nr.", "Navn", "+500"],
+        ),
+        (
+            "tests/data/processor/image_processed_with_no_tables.png",
             0,
             [],
         ),
@@ -276,7 +280,7 @@ def test_remove_logo(pdf_text_reader, image_path, difference_flag_expected):
 def test_find_tables(
     pdf_text_reader, image_path, n_tables_expected, texts_in_table_expected
 ):
-    image = read_image(image_path)
+    image = cv2.bitwise_not(read_image(image_path))
     table_boxes = pdf_text_reader._find_tables(image=image)
     assert len(table_boxes) == n_tables_expected
     assert all(text in table_boxes[0]["text"] for text in texts_in_table_expected)
