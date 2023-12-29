@@ -68,7 +68,7 @@ def test_line_anonymization_to_boxes(pdf_text_reader, image_path, n_matches_expe
     "image_path, anonymized_boxes, underlines",
     [
         (
-            "tests/data/processor/underlines.png",
+            "tests/data/processor/underlines_1.png",
             [{"coordinates": (0, 0, 15, 15)}],
             [(20, 20, 22, 30)],
         )
@@ -112,13 +112,13 @@ def test_get_text_from_boxes(pdf_text_reader, boxes, text_expected):
     "image_path, anonymized_box, invert, text_expected",
     [
         (
-            "tests/data/processor/underlines.png",
+            "tests/data/processor/underlines_1.png",
             {"coordinates": (2863, 296, 2898, 490), "origin": "underline"},
             True,
             "<anonym>Tiltalte 2</anonym>",
         ),
         (
-            "tests/data/processor/underlines.png",
+            "tests/data/processor/underlines_1.png",
             {"coordinates": (1186, 296, 1221, 490), "origin": "underline"},
             True,
             "<anonym>CPR nr. 1</anonym>",
@@ -301,4 +301,4 @@ def test_get_row_indices_to_split(pdf_text_reader, image_path, rows_to_split_exp
 
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_extract_text"])
+    pytest.main([__file__ + "::test_line_anonymization_to_boxes"])
