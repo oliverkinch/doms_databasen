@@ -692,7 +692,7 @@ class PDFTextReader:
             if crop.sum() == 0:
                 # Box is empty
                 continue
-            
+
             box_is_duplicate = any(
                 self._too_much_overlap(box_1=anonymized_box, box_2=box)
                 for box in anonymized_boxes
@@ -702,7 +702,7 @@ class PDFTextReader:
                 underlines.append(blob.bbox)
 
         return anonymized_boxes, underlines
-    
+
     def _extract_underline(self, blob: RegionProperties) -> Union[tuple, bool]:
         rows, cols = blob.coords.transpose()
         col_min = cols.min()
@@ -712,7 +712,7 @@ class PDFTextReader:
 
         if not (rows_at_col_min == rows_at_col_max).all():
             return False
-        
+
         row_min = rows_at_col_min.min()
         row_max = rows_at_col_min.max()
 
@@ -722,10 +722,10 @@ class PDFTextReader:
             y = row_max - row_min + 1
             if x * y == n_pixels:
                 return True
-            
+
         if not _perfect_rectangle():
             return False
-        
+
         # Bounds for height of underline.
         lb, ub = (
             self.config.underline_height_lower_bound,
@@ -740,12 +740,12 @@ class PDFTextReader:
     @staticmethod
     def _blob_bottom_length(blob: RegionProperties) -> int:
         """Number of pixels in the bottom row of the blob.
-        
+
         Args:
             blob (RegionProperties):
                 Blob to get length of.
 
-        Returns:    
+        Returns:
             int:
                 Number of pixels in the bottom row of the blob.
         """
@@ -759,7 +759,7 @@ class PDFTextReader:
         self, binary: np.ndarray
     ) -> np.ndarray:
         """Make split between overlapping box and underline.
-        
+
         Args:
             binary (np.ndarray):
                 Binary image.
@@ -776,7 +776,10 @@ class PDFTextReader:
         for blob in edge_blobs:
             row_min, col_min, row_max, col_max = blob.bbox
             height = row_max - row_min
-            if height < self.config.make_split_between_overlapping_box_and_line_height_max:
+            if (
+                height
+                < self.config.make_split_between_overlapping_box_and_line_height_max
+            ):
                 break
             heights.append(height)
 
