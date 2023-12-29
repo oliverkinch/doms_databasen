@@ -735,7 +735,9 @@ class PDFTextReader:
         if not lb < height < ub:
             return False
 
-        return row_min, col_min, row_max, col_max
+        # +1 becauses box coordinates should be exclusive,
+        # e.g. [row_min, row_max)
+        return row_min, col_min, row_max + 1, col_max + 1
 
     @staticmethod
     def _blob_bottom_length(blob: RegionProperties) -> int:
