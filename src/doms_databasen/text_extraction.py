@@ -50,87 +50,81 @@ class PDFTextReader:
         self.config = config
         self.reader = easyocr.Reader(["da"], gpu=config.gpu)
 
-    def extract_text(self, pdf_path: Path) -> str:
-        """Extracts text from a PDF using easyocr or tika.
-
-        Tika is only used if there are no indications of anonymization.
+    def extract_text(self, pdf_path: Path | str) -> str:
+        """Extracts text from a PDF using easyocr or pypdf.
 
         Some text is anonymized with boxes, and some text is anonymized with underlines.
         This function tries to find these anonymization, read the anonymized text,
         and then remove the anonymized text from the image before
         reading the rest of the text with easyocr.
+        If a page has no anonymization or tables, the text is read with pypdf.
 
         Args:
-            pdf_path (Path):
+            pdf_path (Path | str):
                 Path to PDF.
 
         Returns:
             pdf_text (str):
                 Text from PDF.
+            pdf_data (dict):
+                Data about PDF - which anonymization that is used,
+                and text + extraction method for each page.
         """
+        pdf_reader = PdfReader(pdf_path)
+
         images = self._get_images(pdf_path=pdf_path)
-        pdf_text = ""
+        pages = {}
 
         # I have not seen a single PDF that uses both methods.
-        # I have not either seen a PDF where there not
-        # anonymization on the first page, if there are
-        # any anonymization at all.
-        # Therefore try both methods on the first page,
-        # and then use the method that seems to be used, for the
-        # rest of the pages.
-        underline_anonymization = True
+        # Try both methods until it is known which method is used.
+        # Then use that method for the rest of the PDF.
         box_anonymization = True
-        text_tika = None
+        underline_anonymization = True
 
         for i, image in enumerate(images):
             logger.info(f"Reading page {i + 1}")
+
+            pages[i] = {
+                "text": "",
+                "extraction_method": "",
+            }
+
+            anonymized_boxes = []
+            anonymized_boxes_underlines = []
+            underlines = []
+            table_boxes = []
+
             if i == 0:
                 image = self._remove_logo(image=image)
 
-            # Log info about which anonymization methods are used in the PDF.
-            if i == 1:
-                self._log_anonymization_methods(
-                    box_anonymization, underline_anonymization
-                )
-
-            # Anonymized boxes
-            anonymized_boxes = []
             if box_anonymization:
-                anonymized_boxes = self._extract_anonymized_boxes(image)
-                box_anonymization = bool(anonymized_boxes)
+                anonymized_boxes = self._extract_anonymized_boxes(image=image)
+
+                # If box anonymization is used, then
+                # don't try to find underline anonymization.
                 underline_anonymization = not bool(anonymized_boxes)
 
-            anonymized_boxes_underlines = []
-            underlines = []
             if underline_anonymization:
                 (
                     anonymized_boxes_underlines,
                     underlines,
-                ) = self._extract_underline_anonymization_boxes(image)
-                text_tika = self._read_text_with_tika(pdf_path=str(pdf_path))
+                ) = self._extract_underline_anonymization_boxes(image=image)
 
-            # If no indication of anonymization on first page, then try use Tika.
-            # If Tika doesn't work, then use easrocr.
-            if i == 0:
-                (
-                    box_anonymization,
-                    underline_anonymization,
-                ) = self._anonymization_methods_used_in_pdf(
-                    anonymized_boxes=anonymized_boxes,
-                    anonymized_boxes_underlines=anonymized_boxes_underlines,
-                )
-                if not box_anonymization and not underline_anonymization:
-                    logger.info(self.config.message_try_use_tika)
-                    text_tika = self._read_text_with_tika(pdf_path=str(pdf_path))
-                    if text_tika:
-                        return None, text_tika
-                    else:
-                        logger.info(self.config.message_tika_failed)
-                        # I have not seen a PDF where tika is not able
-                        # to extract some text (even scanned PDFs)
-                        # However, if it is the case that
-                        # no anonymization is found on the first page,
-                        # and that Tika fails, then use easyocr.
+                # If underlines anonymization is used, then
+                # don't try to find box anonymization.
+                box_anonymization = not bool(anonymized_boxes_underlines)
+
+            # Use a pdf reader if no anonymization methods are used
+            # and no tables are found.
+            if not box_anonymization and not underline_anonymization:
+                table_boxes = self._find_tables(image=image.copy())
+                if not table_boxes:
+                    current_page = pdf_reader.pages[i]
+                    page_text = current_page.extract_text()
+                    pages[i]["text"] = page_text.strip()
+                    pages[i]["extraction_method"] = "pypdf"
+                    # Continue to next page.
+                    continue
 
             all_anonymized_boxes = anonymized_boxes + anonymized_boxes_underlines
 
@@ -139,8 +133,9 @@ class PDFTextReader:
                 anonymized_boxes=all_anonymized_boxes,
                 underlines=underlines,
             )
-
-            table_boxes = self._find_tables(image=image_processed.copy())
+            if not table_boxes:
+                image_processed_inverted = cv2.bitwise_not(image_processed)
+                table_boxes = self._find_tables(image=image_processed_inverted)
 
             image_final = self._remove_tables(
                 image=image_processed, table_boxes=table_boxes
@@ -148,12 +143,83 @@ class PDFTextReader:
 
             main_text_boxes = self._get_main_text_boxes(image=image_final)
 
-            # Merge all boxes
+            # Merge all boxes and get text from them.
             all_boxes = main_text_boxes + all_anonymized_boxes + table_boxes
             page_text = self._get_text_from_boxes(boxes=all_boxes)
-            pdf_text += f"{page_text}\n\n"
 
-        return pdf_text.strip(), text_tika
+            pages[i]["text"] = page_text.strip()
+            pages[i]["extraction_method"] = "easyocr"
+
+        pdf_text = self._get_text_from_pages(pages=pages)
+        pdf_data = self._pdf_data(
+            pages=pages,
+            box_anonymization=box_anonymization,
+            underline_anonymization=underline_anonymization,
+        )
+        return pdf_text.strip(), pdf_data
+
+    def _pdf_data(
+        self, pages: dict, box_anonymization: bool, underline_anonymization: bool
+    ) -> dict:
+        """Get data about PDF.
+
+        Args:
+            pages (dict):
+                Pages with text and extraction method.
+            box_anonymization (bool):
+                True if anonymized boxes are used in PDF. False otherwise.
+            underline_anonymization (bool):
+                True if underlines are used in PDF. False otherwise.
+
+        Returns:
+            pdf_data (dict):
+                Data about PDF.
+        """
+        pdf_data = {}
+        anonymization_method = self._anonymization_used(
+            box_anonymization, underline_anonymization
+        )
+        pdf_data["anonymization_method"] = anonymization_method
+        pdf_data["pages"] = pages
+        return pdf_data
+
+    def _anonymization_used(
+        self, box_anonymization: bool, underline_anonymization: bool
+    ) -> str:
+        """Return anonymization method used in PDF.
+
+        Args:
+            box_anonymization (bool):
+                True if anonymized boxes are used in PDF. False otherwise.
+            underline_anonymization (bool):
+                True if underlines are used in PDF. False otherwise.
+
+        Returns:
+            str:
+                Anonymization method used in PDF.
+        """
+        # Both will only be true, if not any of
+        # the anonymization methods are used.
+        if box_anonymization and underline_anonymization:
+            return "none"
+        elif box_anonymization:
+            return "box"
+        elif underline_anonymization:
+            return "underline"
+
+    def _get_text_from_pages(self, pages: dict) -> str:
+        """Get text from pages.
+
+        Args:
+            pages (dict):
+                Pages with text and extraction method.
+
+        Returns:
+            pdf_text (str):
+                Text from pages.
+        """
+        pdf_text = "\n\n".join(page["text"] for page in pages.values())
+        return pdf_text
 
     def _get_main_text_boxes(self, image: np.ndarray) -> List[dict]:
         """Read main text of page.
@@ -190,6 +256,8 @@ class PDFTextReader:
         """
         box_anonymization = bool(anonymized_boxes)
         underline_anonymization = bool(anonymized_boxes_underlines)
+
+        self._log_anonymization_methods(box_anonymization, underline_anonymization)
         return box_anonymization, underline_anonymization
 
     def _extract_anonymized_boxes(self, image: np.ndarray) -> List[dict]:
@@ -298,14 +366,15 @@ class PDFTextReader:
         Args:
             image (np.ndarray):
                 Image to find tables in.
+                The tables in the image should have black borders.
+                E.g. the image should not be inverted.
 
         Returns:
             table_boxes (List[dict]):
                 List of tables with coordinates and text.
         """
-        image_processed = self._process_before_table_search(image=image)
         with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
-            cv2.imwrite(tmp.name, image_processed)
+            cv2.imwrite(tmp.name, image)
             table_image = TableImage(src=tmp.name, detect_rotation=False)
             tables = table_image.extract_tables()
 
@@ -443,10 +512,10 @@ class PDFTextReader:
             )
 
             text = self._read_text(crop_to_read)
-            all_text = self._add_text(text, all_text)
+            all_text += text
 
         # Remove last newline character
-        all_text = all_text[:-1] if all_text[-1:] == "\n" else all_text
+        all_text = all_text[:-1] if all_text[-1] == "\n" else all_text
         cell.value = all_text
 
     def _empty_image(self, image: np.ndarray, binarize_threshold: int) -> bool:
@@ -520,8 +589,11 @@ class PDFTextReader:
         if not all_text:
             all_text = text
         else:
-            # text[-1] is `\n`
-            sep = "" if all_text[-2] == "-" else " "
+            # all_text[-1] is `\n`
+            if len(all_text) < 2:
+                sep = ""
+            else:
+                sep = "" if all_text[-2] == "-" else " "
             all_text += f"{sep}{text}"
 
         return all_text
@@ -678,10 +750,11 @@ class PDFTextReader:
 
             row_min, col_min, _, col_max = underline
 
+            expand = self.config.underline_box_expand
             box_row_min = row_min - self.config.underline_box_height
             box_row_max = row_min - 1  # Just above underline
-            box_col_min = col_min
-            box_col_max = col_max
+            box_col_min = col_min - expand
+            box_col_max = col_max + expand
 
             anonymized_box = {
                 "coordinates": [box_row_min, box_col_min, box_row_max, box_col_max],
@@ -704,13 +777,31 @@ class PDFTextReader:
         return anonymized_boxes, underlines
 
     def _extract_underline(self, blob: RegionProperties) -> Union[tuple, bool]:
+        """Extract underline from blob.
+
+        Blob might be an underline. If it is, then return the underline.
+        Else, return False.
+
+        Args:
+            blob (RegionProperties):
+                Blob to extract underline from.
+
+        Returns:
+            underline (tuple):
+                Underline with coordinates.
+            False:
+                If underline is not found.
+        """
         rows, cols = blob.coords.transpose()
         col_min = cols.min()
         col_max = cols.max()
         rows_at_col_min = rows[cols == col_min]
         rows_at_col_max = rows[cols == col_max]
 
-        if not (rows_at_col_min == rows_at_col_max).all():
+        if (
+            not len(rows_at_col_min) == len(rows_at_col_max)
+            or not (rows_at_col_min == rows_at_col_max).all()
+        ):
             return False
 
         row_min = rows_at_col_min.min()

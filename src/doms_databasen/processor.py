@@ -77,20 +77,15 @@ class Processor(PDFTextReader):
         processed_data["tabular_data"] = tabular_data
         processed_data["case_id"] = case_id
         pdf_path = case_dir_raw / self.config.file_names.pdf_document
-        text_anonymized, text_tika = self.extract_text(
+        text_anonymized, pdf = self.extract_text(
             pdf_path=pdf_path,
         )
-        if text_anonymized is not None:
-            processed_data["text_anon_tagged"] = text_anonymized
-        if text_tika is not None:
-            # If a PDF has underline anonymization, we use
-            # the text extracted with Tika, instead of replacing
-            # the anon tagged text which is not as accurate (easyocr).
-            text = text_tika
-        else:
-            # Remove anonymization tags from easyocr text.
-            text = re.sub(r"<anonym.*</anonym>", "", text_anonymized)
 
+        processed_data["text_anon_tagged"] = text_anonymized
+        processed_data["pdf"] = pdf
+
+        # Remove anonymization tags from text.
+        text = re.sub(r"<anonym.*</anonym>", "", text_anonymized)
         processed_data["text"] = text
 
         if not self.config.testing:
