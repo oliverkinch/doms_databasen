@@ -23,9 +23,13 @@ def pdf_text_reader(config):
 @pytest.mark.parametrize(
     "pdf_path, expected_text",
     [
+        # (
+        #     "data/raw/2531/document.pdf",
+        #     "testiiiing"
+        # ),
         (
             "tests/data/processor/no_anonymization.pdf",
-            "No anonymizations, so tika will read the text and \nwill do it correctly.;:..",
+            "This is a PDF without anonymizations.",
         ),
         (
             "tests/data/processor/underlines.pdf",
@@ -34,9 +38,7 @@ def pdf_text_reader(config):
     ],
 )
 def test_extract_text(pdf_text_reader, pdf_path, expected_text):
-    text, text_tika = pdf_text_reader.extract_text(pdf_path=pdf_path)
-    if text is None:
-        text = text_tika
+    text, _ = pdf_text_reader.extract_text(pdf_path=pdf_path)
     assert text == expected_text
 
 
@@ -260,29 +262,40 @@ def test_remove_logo(pdf_text_reader, image_path, difference_flag_expected):
 
 # Remake images for this test where anonymized boxes are removed.
 @pytest.mark.parametrize(
-    "image_path, n_tables_expected, texts_in_table_expected",
+    "image_path, n_tables_expected, texts_in_table_expected, invert",
     [
         (
             "tests/data/processor/image_processed_find_tables_1.png",
             1,
             ["Geografisk", "Medlemsstat", "Fiskeriart"],
+            True,
         ),
         (
             "tests/data/processor/image_processed_find_tables_2.png",
             1,
             ["Eng.nr.", "Navn", "+500"],
+            True,
         ),
         (
             "tests/data/processor/image_processed_with_no_tables.png",
             0,
             [],
+            True,
+        ),
+        (
+            "tests/data/processor/page_with_table_1.png",
+            1,
+            ["DKK", "Indkomst før genoptagelse"],
+            False,
         ),
     ],
 )
 def test_find_tables(
-    pdf_text_reader, image_path, n_tables_expected, texts_in_table_expected
+    pdf_text_reader, image_path, n_tables_expected, texts_in_table_expected, invert
 ):
-    image = cv2.bitwise_not(read_image(image_path))
+    image = read_image(image_path)
+    if invert:
+        image = cv2.bitwise_not(image)
     table_boxes = pdf_text_reader._find_tables(image=image)
     assert len(table_boxes) == n_tables_expected
     assert all(text in table_boxes[0]["text"] for text in texts_in_table_expected)
@@ -301,4 +314,4 @@ def test_get_row_indices_to_split(pdf_text_reader, image_path, rows_to_split_exp
 
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_line_anonymization_to_boxes"])
+    pytest.main([__file__ + "::test_extract_text", "-s"])
