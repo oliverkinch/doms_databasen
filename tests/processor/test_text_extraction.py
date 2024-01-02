@@ -23,10 +23,6 @@ def pdf_text_reader(config):
 @pytest.mark.parametrize(
     "pdf_path, expected_text",
     [
-        # (
-        #     "data/raw/2531/document.pdf",
-        #     "testiiiing"
-        # ),
         (
             "tests/data/processor/no_anonymization.pdf",
             "This is a PDF without anonymizations.",
@@ -149,6 +145,12 @@ def test_get_text_from_boxes(pdf_text_reader, boxes, text_expected):
             False,
             "<anonym>Sagsøgte 2's</anonym>",
         ),
+        (
+            "tests/data/processor/get_text_from_box_5.png",
+            {"coordinates": [2439, 1338, 2488, 1555], "origin": "underline"},
+            True,
+            "<anonym>Tiltalte 5's</anonym>",
+        )
     ],
 )
 def test_read_text_from_anonymized_box(
@@ -314,4 +316,4 @@ def test_get_row_indices_to_split(pdf_text_reader, image_path, rows_to_split_exp
 
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_extract_text", "-s"])
+    pytest.main([__file__ + "::test_read_text_from_anonymized_box", "-s"])

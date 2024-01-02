@@ -511,8 +511,8 @@ class PDFTextReader:
                 refine_padding=self.config.cell_box_crop_padding,
             )
 
-            text = self._read_text(crop_to_read)
-            all_text += text
+            text = self._read_text_from_crop(crop_to_read)
+            all_text += f"{text}\n"
 
         # Remove last newline character
         all_text = all_text[:-1] if all_text[-1] == "\n" else all_text
@@ -808,6 +808,7 @@ class PDFTextReader:
         row_max = rows_at_col_min.max()
 
         def _perfect_rectangle():
+            """Perfect rectangle is a rectangle where all pixels are filled."""
             n_pixels = sum(len(cols[rows == row]) for row in rows_at_col_min)
             x = col_max - col_min + 1
             y = row_max - row_min + 1
@@ -1350,9 +1351,11 @@ class PDFTextReader:
         tl, tr, _, bl = easyocr_box[0]
         row_min, col_min, row_max, col_max = tl[1], tl[0], bl[1], tr[0]
         text = easyocr_box[1]
+        confidence = easyocr_box[2]
         anonymized_box = {
             "coordinates": (row_min, col_min, row_max, col_max),
             "text": text,
+            "confidence": confidence
         }
         return anonymized_box
 
@@ -1487,18 +1490,98 @@ class PDFTextReader:
         """
         result = self.reader.readtext(crop)
 
-        if len(result) == 0:
-            text = ""
-        else:
-            result = self._sort_result_by_x(result=result)
-            text = " ".join(
-                [
-                    box[1]
-                    for box in result
-                    if box[2] > self.config.threshold_box_confidence
-                ]
-            )
+        if not result:
+            return ""
+
+        boxes = [self._change_box_format(box) for box in result]
+        boxes = self._remove_inner_boxes(boxes=boxes)
+        boxes = self._sort_by_x(boxes=boxes)
+
+        text = " ".join(box["text"] for box in boxes if box["confidence"] > self.config.threshold_box_confidence)
+
+        text = boxes[0]["text"]
+        for box in boxes[1:]:
+            box_text = box["text"]
+            sep = "" if text[-1] == "-" else " "
+            text += f"{sep}{box_text}"
+
         return text
+    
+    def _sort_by_x(self, boxes: List[dict]) -> List[dict]:
+        """Sort boxes by x coordinate.
+
+        Args:
+            boxes (List[dict]):
+                List of boxes with coordinates.
+
+        Returns:
+            List[dict]:
+                List of boxes sorted by x coordinate.
+        """
+        return sorted(boxes, key=lambda box: box["coordinates"][1])
+    
+    def _remove_inner_boxes(self, boxes: List[dict]) -> List[dict]:
+        boxes = sorted(boxes, key=lambda box: self._area(box=box), reverse=True)
+        boxes_ = [boxes[0]]
+        for box in boxes[1:]:
+            if not self._inner_box(boxes=boxes_, box=box):
+                boxes_.append(box)
+        return boxes_
+
+    def _area(self, box: dict) -> int:
+        """Calculates the area of a box.
+
+        Args:
+            box (dict):
+                Anonymized box with coordinates.
+
+        Returns:
+            int:
+                Area of the box.
+        """
+        row_min, col_min, row_max, col_max = box["coordinates"]
+        return (row_max - row_min) * (col_max - col_min)
+
+    def _inner_box(self, boxes: List[dict], box: dict) -> bool:
+        """Determine if box is inside another box.
+
+        Args:
+            boxes (List[dict]):
+                List of boxes with coordinates.
+            box (dict):
+                Box with coordinates.
+
+        Returns:
+            bool:
+                True if box is inside another box. False otherwise.
+        """
+        for box_ in boxes:
+            if self._inside(box_1=box, box_2=box_):
+                return True
+        return False
+    
+    def _inside(self, box_1: dict, box_2: dict) -> bool:
+        """Determine if box_1 is inside box_2.
+
+        Args:
+            box_1 (dict):
+                Box with coordinates.
+            box_2 (dict):
+                Box with coordinates.
+
+        Returns:
+            bool:
+                True if box_1 is inside box_2. False otherwise.
+        """
+        row_min_1, col_min_1, row_max_1, col_max_1 = box_1["coordinates"]
+        row_min_2, col_min_2, row_max_2, col_max_2 = box_2["coordinates"]
+
+        return (
+            row_min_2 <= row_min_1
+            and col_min_2 <= col_min_1
+            and row_max_2 >= row_max_1
+            and col_max_2 >= col_max_1
+        )
 
     def _box_refined_to_crop(
         self, box_refined: dict, crop_refined: np.ndarray
