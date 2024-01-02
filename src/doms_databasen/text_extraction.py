@@ -4,6 +4,7 @@ import tempfile
 from logging import getLogger
 from pathlib import Path
 from typing import List, Tuple, Union
+import re
 
 import cv2
 import easyocr
@@ -27,6 +28,7 @@ from src.doms_databasen.constants import (
     BOX_HEIGHT_LOWER_BOUND,
     DPI,
     LENGTH_EIGHT_LETTERS,
+    TAB_PIXEL_LENGTH,
 )
 
 logger = getLogger(__name__)
@@ -1212,6 +1214,9 @@ class PDFTextReader:
         if not boxes:
             # Empty page supposedly
             return ""
+        
+        # Remove multiple spaces
+        boxes = [self._remove_multiple_spaces(box=box) for box in boxes]
 
         # Sort w.r.t y coordinate.
         boxes_y_sorted = sorted(boxes, key=lambda box: self._middle_y_cordinate(box))
@@ -1243,7 +1248,9 @@ class PDFTextReader:
         # Now sort each line w.r.t x coordinate.
         # The lines should as a result be sorted w.r.t how a text is read.
         for i, line in enumerate(lines):
-            lines[i] = sorted(line, key=lambda box: self._left_x_cordinate(box))
+            line_ = sorted(line, key=lambda box: self._left_x_cordinate(box))
+            line_ = self._removed_unwanted_boxes(line=line_)
+            lines[i] = line_
 
         # Ignore unwanted lines
         # Currently only footnotes are ignored.
@@ -1251,12 +1258,88 @@ class PDFTextReader:
         # For example, ignore page numbers.
         lines_ = [line for line in lines if not self._ignore_line(line)]
 
-        # Each bounding box on a line is joined together with a space,
-        # and the lines of text are joined together with \n.
+        # Join each line with \n.
         page_text = "\n".join(
-            [" ".join([box["text"] for box in line]) for line in lines_]
+            [self._join_line(line=line) for line in lines_]
         ).strip()
         return page_text
+    
+    def _remove_multiple_spaces(self, box: dict) -> dict:
+        text_cleaned = re.sub(r" +", " ", box["text"])
+        box["text"] = text_cleaned
+        return box
+    
+    def _removed_unwanted_boxes(self, line: List[dict]) -> List[dict]:
+        # Get index of first box that contains text.
+        i = 0
+        while i < len(line):
+            box = line[i]
+            if box["text"]:
+                break
+            i += 1
+        if i == len(line):
+            # No box contains text.
+            return []
+
+        box_first = line[i]
+        col_start = box_first["coordinates"][1]
+        if col_start > self.config.line_start_ignore_col:
+            return []
+        
+        line_ = [box_first]
+        for j in range(i + 1, len(line)):
+            box = line[j]
+            box_prev = line[j - 1]
+            distance = self._box_distance(box_1=box_prev, box_2=box)
+            if distance > 2 * TAB_PIXEL_LENGTH:
+                break
+            line_.append(box)
+        return line_
+
+    def _join_line(self, line: List[dict]) -> str:
+        """Join line of boxes together.
+
+        If boxes on a line are far apart, then join the boxes with tabs, 
+        otherwise join the boxes with spaces.
+
+        Args:
+            line (List[dict]):
+                List of boxes on the line.
+
+        Returns:
+            line_text (str):
+                Text from line.
+        """
+        box_first = line[0]
+        line_text = box_first["text"]
+        for i in range(1, len(line)):
+            box = line[i]
+            box_prev = line[i - 1]
+            distance = self._box_distance(box_1=box_prev, box_2=box)
+            n_tabs = distance // TAB_PIXEL_LENGTH
+            sep = "\t" * n_tabs if n_tabs > 0 else " "
+            line_text += f"{sep}{box['text']}"
+        return line_text
+    
+    def _box_distance(self, box_1: dict, box_2: dict) -> int:
+        """Distance between two boxes.
+        
+        The distance between the right side of box 1 and the left side of box 2.
+        Box 1 must be to the left of box 2.
+
+        Args:
+            box_1 (dict):
+                Anonymized box with coordinates.
+            box_2 (dict):
+                Anonymized box with coordinates.
+
+        Returns:
+            int:
+                Distance between two boxes.
+        """
+        col_start_box_2 = box_2["coordinates"][1]
+        col_end_box_1 = box_1["coordinates"][3]
+        return col_start_box_2 - col_end_box_1 
 
     def _ignore_line(self, line: List[dict]) -> bool:
         """Checks if line should be ignored.
@@ -1273,6 +1356,8 @@ class PDFTextReader:
             bool:
                 True if line should be ignored. False otherwise.
         """
+        if not line:
+            return True
         first_box = line[0]
         return self._is_footnote(first_box)
 
@@ -1752,9 +1837,12 @@ class PDFTextReader:
         )
         inverted = cv2.bitwise_not(binary)
 
+        # closing
+        closed = cv2.morphologyEx(inverted, cv2.MORPH_CLOSE, np.ones((10, 10)))
+
         # Some boxes are overlapping (horizontally).
         # Split them into separate boxes.
-        inverted_boxes_split = self._split_boxes_in_image(inverted=inverted.copy())
+        inverted_boxes_split = self._split_boxes_in_image(inverted=closed.copy())
 
         binary_splitted = self._make_split_between_overlapping_box_and_line(
             binary=inverted_boxes_split
@@ -1861,8 +1949,9 @@ class PDFTextReader:
                 List of row indices to split.
         """
         closed = cv2.morphologyEx(blob_image, cv2.MORPH_CLOSE, np.ones((40, 1)))
+        opening = cv2.morphologyEx(closed, cv2.MORPH_OPEN, np.ones((30, 1)))
 
-        edges_h = self._get_horizontal_edges(closed=closed)
+        edges_h = self._get_horizontal_edges(closed=opening)
 
         edge_lengths = self._get_edge_lengths(edges_h=edges_h)
 
@@ -1880,13 +1969,27 @@ class PDFTextReader:
             List[int]:
                 List of row indices to split.
         """
-        rows_to_split = [0]
-        for idx, length in edge_lengths.items():
-            if self._split_conditions(
-                length=length, idx=idx, predesessor_idx=rows_to_split[-1]
-            ):
-                rows_to_split.append(idx)
-        return rows_to_split[1:]
+        edges = sorted(edge_lengths.keys())
+        edge_first = edges[0]
+        edges_grouped = [[edge_first]]
+        for i in range(1, len(edges)):
+            edge = edges[i]
+            edge_prev = edges[i - 1]
+            if edge - edge_prev < self.config.indices_to_split_row_diff:
+                edges_grouped[-1].append(edge)
+            else:
+                edges_grouped.append([edge])
+
+        groups_max_aggregated = [self._group_max(group=group, edge_lengths=edge_lengths) for group in edges_grouped]
+        rows_to_split = [row for row in groups_max_aggregated if edge_lengths[row] > self.config.indices_to_split_edge_min_length]
+        return rows_to_split
+    
+    def _group_max(self, group, edge_lengths):
+        idx = group[0]
+        for i in group[1:]:
+            if edge_lengths[i] > edge_lengths[idx]:
+                idx = i
+        return idx
 
     def _split_conditions(self, length: int, idx: int, predesessor_idx: int) -> bool:
         """Checks if conditions for splitting are met.
