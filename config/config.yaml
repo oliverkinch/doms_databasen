@@ -75,7 +75,7 @@ underline_height_lower_bound: 2
 underline_height_upper_bound: 7
 underline_remove_pad: 1
 underline_box_height: 50
-underline_box_height_min: 34
+underline_box_height_min: 32
 underline_box_expand: 3
 threshold_binarize_line_anonymization: 255
 
@@ -141,7 +141,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "938"
+  case_id: "157"
   all: False
   messages:
     give_correct_input: >

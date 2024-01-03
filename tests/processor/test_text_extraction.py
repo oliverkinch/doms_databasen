@@ -162,6 +162,18 @@ def test_get_text_from_boxes(pdf_text_reader, boxes, text_expected):
             {'coordinates': [2870, 552, 2919, 1137], "origin": "underline"},
             True,
             "<anonym>Kærende 9 tidligere Lejer 9</anonym>",
+        ),
+        (
+            ("tests/data/processor/get_text_from_box_7.png"),
+            {'coordinates': [3016, 1063, 3065, 1159], "origin": "underline"},
+            True,
+            "<anonym>Navn</anonym>"
+        ),
+        (
+            ("tests/data/processor/get_text_from_box_7.png"),
+            {'coordinates': [3016, 389, 3065, 641], "origin": "underline"},
+            True,
+            "<anonym>Tiltaltelsigtede</anonym>",
         )
     ],
 )
@@ -315,4 +327,4 @@ def test_get_row_indices_to_split(pdf_text_reader, image_path, rows_to_split_exp
 
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_read_text_from_anonymized_box", "-s"])
+    pytest.main([__file__ + "::test_find_tables", "-s"])

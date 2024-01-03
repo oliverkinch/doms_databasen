@@ -104,7 +104,9 @@ class PDFTextReader:
 
                 # If box anonymization is used, then
                 # don't try to find underline anonymization.
-                underline_anonymization = not bool(anonymized_boxes)
+                if anonymized_boxes:
+                    underline_anonymization = False
+
 
             if underline_anonymization:
                 (
@@ -114,11 +116,11 @@ class PDFTextReader:
 
                 # If underlines anonymization is used, then
                 # don't try to find box anonymization.
-                box_anonymization = not bool(anonymized_boxes_underlines)
+                if anonymized_boxes_underlines:
+                    box_anonymization = False
 
-            # Use a pdf reader if no anonymization methods are used
-            # and no tables are found.
-            if not box_anonymization and not underline_anonymization:
+            # Use a pdf reader if no signs of anonymization are found.
+            if not anonymized_boxes and not anonymized_boxes_underlines:
                 table_boxes = self._find_tables(image=image.copy())
                 if not table_boxes:
                     current_page = pdf_reader.pages[i]
@@ -513,7 +515,7 @@ class PDFTextReader:
                 refine_padding=self.config.cell_box_crop_padding,
             )
 
-            text = self._read_text_from_crop(crop_to_read)
+            text = self._read_text_from_crop(crop_to_read, cell=True)
             all_text += f"{text}\n"
 
         # Remove last newline character
@@ -1576,7 +1578,7 @@ class PDFTextReader:
             and anonymized_box["origin"] == self.config.origin_underline
         )
 
-    def _read_text_from_crop(self, crop: np.ndarray) -> str:
+    def _read_text_from_crop(self, crop: np.ndarray, cell: bool = False) -> str:
         """Read text from crop.
 
         Args:
@@ -1597,12 +1599,21 @@ class PDFTextReader:
         boxes = self._sort_by_x(boxes=boxes)
         # At this point I only see there to be > 1 box, if eg. a "," is read as "9".
         # Therefore, just use text from first box
-        if len(boxes) > 1:
-            print("aloha")
-            assert boxes[1]["text"] == "9"
-        box_first = boxes[0]
-        text = box_first["text"]
+        if not cell:
+            if len(boxes) > 1:
+                print("aloha")
+                assert boxes[1]["text"] == "9"
+            box_first = boxes[0]
+            text = box_first["text"]
+            return text
+        
+        text = " ".join([box["text"] for box in boxes if box["confidence"] > self.config.threshold_box_confidence])
         return text
+        # text = boxes[0]["text"]
+        # for box in boxes[1:]:
+        #     sep = "" if text[-1] == "-" else " "
+        #     text += f"{sep}{box['text']}"
+        # return text
     
     def _sort_by_x(self, boxes: List[dict]) -> List[dict]:
         """Sort boxes by x coordinate.
