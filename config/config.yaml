@@ -57,7 +57,7 @@ threshold_binarize_anonymized_boxes: 50
 threshold_binarize_split_indices: 100
 threshold_binarize_empty_box: 100
 threshold_binarize_top_page: 230
-threshold_gap: 14
+threshold_gap: 11
 threshold_box_confidence: 0.3
 threshold_binarize_process_crop: 200
 threshold_remove_boundary_height: 20

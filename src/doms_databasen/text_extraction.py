@@ -1906,7 +1906,6 @@ class PDFTextReader:
                 "coordinates": [*blob.bbox],
                 "origin": self.config.origin_box,
             }
-            # Draw box test case 1086 p 1
             anonymized_boxes.append(anonymized_box)
 
         return anonymized_boxes

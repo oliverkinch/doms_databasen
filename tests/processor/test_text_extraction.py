@@ -190,11 +190,11 @@ def test_read_text_from_anonymized_box(
 @pytest.mark.parametrize(
     "image_path, n_matches_expected",
     [
-        # ("tests/data/processor/page_with_boxes_1.png", 4),
-        # ("tests/data/processor/page_with_stacked_boxes.png", 9),
-        # ("tests/data/processor/page_with_boxes_3.png", 6),
+        ("tests/data/processor/page_with_boxes_1.png", 4),
+        ("tests/data/processor/page_with_stacked_boxes.png", 9),
+        ("tests/data/processor/page_with_boxes_3.png", 6),
         ("tests/data/processor/page_with_boxes_4.png", 22),
-        # ("tests/data/processor/page_with_boxes_5.png", 4),
+        ("tests/data/processor/page_with_boxes_5.png", 4),
     ],
 )
 def test_find_anonymized_boxes(pdf_text_reader, image_path, n_matches_expected):
@@ -224,9 +224,13 @@ def test_remove_boundary_noise(pdf_text_reader, config, image_path):
     "image_path, n_splits_expected",
     [
         (
-            "tests/data/processor/box_with_multiple_words.png",
+            "tests/data/processor/box_with_multiple_words_1.png",
             5,
         ),
+        (
+            "tests/data/processor/box_with_multiple_words_2.png",
+            1,
+        )
     ],
 )
 def test_get_split_indices(pdf_text_reader, image_path, n_splits_expected):
@@ -327,4 +331,4 @@ def test_get_row_indices_to_split(pdf_text_reader, image_path, rows_to_split_exp
 
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_find_tables", "-s"])
+    pytest.main([__file__ + "::test_find_anonymized_boxes", "-s"])
