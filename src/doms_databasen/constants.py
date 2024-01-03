@@ -11,6 +11,6 @@ N_FILES_PROCESSED_CASE_DIR = 1
 # Processor
 DPI = 300
 BOX_HEIGHT_LOWER_BOUND = 50
-LENGTH_EIGHT_LETTERS = 200  # Approx length of box of 10 letters
+LENGTH_SIX_LETTERS = 150  # Approx length of box of 4 letters
 
 TAB_PIXEL_LENGTH = 50

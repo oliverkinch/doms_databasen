@@ -44,10 +44,9 @@ slight_shift_to_bottom: 5
 iou_overlap_threshold: 0.5
 indices_to_split_edge_min_length: 5
 indices_to_split_row_diff: 50
-max_scale: 3.3
-min_scale: 0.8
+max_scale: 1.5
 
-anonymized_box_crop_padding: 2
+anonymized_box_crop_padding: 3
 
 refine_box_padding: 2
 
@@ -142,7 +141,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "641"
+  case_id: "938"
   all: False
   messages:
     give_correct_input: >

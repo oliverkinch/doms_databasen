@@ -27,7 +27,7 @@ from tika import parser
 from src.doms_databasen.constants import (
     BOX_HEIGHT_LOWER_BOUND,
     DPI,
-    LENGTH_EIGHT_LETTERS,
+    LENGTH_SIX_LETTERS,
     TAB_PIXEL_LENGTH,
 )
 
@@ -1270,6 +1270,20 @@ class PDFTextReader:
         return box
     
     def _removed_unwanted_boxes(self, line: List[dict]) -> List[dict]:
+        """Remove unwanted boxes from line.
+        
+        Remove boxes that are not part of the main text. 
+        For example, there might be an info box to the right of the main text.
+        We want to remove this info box.
+
+        Args:
+            line (List[dict]):
+                List of boxes on the line.
+
+        Returns:
+            line (List[dict]):
+                List of boxes on the line with unwanted boxes removed.
+        """
         # Get index of first box that contains text.
         i = 0
         while i < len(line):
@@ -1581,15 +1595,13 @@ class PDFTextReader:
         boxes = [self._change_box_format(box) for box in result]
         boxes = self._remove_inner_boxes(boxes=boxes)
         boxes = self._sort_by_x(boxes=boxes)
-
-        text = " ".join(box["text"] for box in boxes if box["confidence"] > self.config.threshold_box_confidence)
-
-        text = boxes[0]["text"]
-        for box in boxes[1:]:
-            box_text = box["text"]
-            sep = "" if text[-1] == "-" else " "
-            text += f"{sep}{box_text}"
-
+        # At this point I only see there to be > 1 box, if eg. a "," is read as "9".
+        # Therefore, just use text from first box
+        if len(boxes) > 1:
+            print("aloha")
+            assert boxes[1]["text"] == "9"
+        box_first = boxes[0]
+        text = box_first["text"]
         return text
     
     def _sort_by_x(self, boxes: List[dict]) -> List[dict]:
@@ -1606,6 +1618,18 @@ class PDFTextReader:
         return sorted(boxes, key=lambda box: box["coordinates"][1])
     
     def _remove_inner_boxes(self, boxes: List[dict]) -> List[dict]:
+        """Remove inner boxes.
+        
+        If a box is inside another box, then remove the inner box.
+
+        Args:
+            boxes (List[dict]):
+                List of boxes with coordinates.
+
+        Returns:
+            List[dict]:
+                List of boxes with inner boxes removed.
+        """
         boxes = sorted(boxes, key=lambda box: self._area(box=box), reverse=True)
         boxes_ = [boxes[0]]
         for box in boxes[1:]:
@@ -1736,9 +1760,11 @@ class PDFTextReader:
             float:
                 Scale to scale box/crop with.
         """
-        scale = LENGTH_EIGHT_LETTERS / box_length
+        if box_length > LENGTH_SIX_LETTERS:
+            scale = 1
+            return scale
+        scale = LENGTH_SIX_LETTERS / box_length
         scale = min(scale, self.config.max_scale)
-        scale = max(scale, self.config.min_scale)
         return scale
 
     def _scale_image(self, image: np.ndarray, scale: float) -> np.ndarray:
@@ -1754,6 +1780,8 @@ class PDFTextReader:
             np.ndarray:
                 Scaled image.
         """
+        if scale == 1:
+            return image
         scaled = cv2.resize(image, (0, 0), fx=scale, fy=scale)
         return scaled
 

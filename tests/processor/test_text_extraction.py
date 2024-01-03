@@ -150,6 +150,18 @@ def test_get_text_from_boxes(pdf_text_reader, boxes, text_expected):
             {"coordinates": [2439, 1338, 2488, 1555], "origin": "underline"},
             True,
             "<anonym>Tiltalte 5's</anonym>",
+        ),
+        (
+            "tests/data/processor/get_text_from_box_6.png",
+            {"coordinates": [2359, 527, 2408, 1110], "origin": "underline"},
+            True,
+            "<anonym>Kærende 3 , tidligere Lejer 3</anonym>",
+        ),
+        (
+            "tests/data/processor/get_text_from_box_6.png",
+            {'coordinates': [2870, 552, 2919, 1137], "origin": "underline"},
+            True,
+            "<anonym>Kærende 9 tidligere Lejer 9</anonym>",
         )
     ],
 )
@@ -232,22 +244,6 @@ def test_no_boxes_with_too_much_overlap(
     assert len(underlines) - len(boxes) == n_duplicates_expected
 
 
-# @pytest.mark.parametrize(
-#     "image_path, n_boxes_after_split_expected",
-#     [
-#         ("tests/data/processor/overlapping_boxes_1.png", 2),
-#         ("tests/data/processor/overlapping_boxes_2.png", 4),
-#     ],
-# )
-# def test_get_row_indices_to_split(
-#     pdf_text_reader, image_path, n_boxes_after_split_expected
-# ):
-#     image = read_image(image_path)
-#     split_indices = pdf_text_reader._get_row_indices_to_split(blob_image=image)
-#     n_boxes = len(split_indices) + 1
-#     assert n_boxes == n_boxes_after_split_expected
-
-
 @pytest.mark.parametrize(
     "image_path, difference_flag_expected",
     [
@@ -319,4 +315,4 @@ def test_get_row_indices_to_split(pdf_text_reader, image_path, rows_to_split_exp
 
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_get_row_indices_to_split", "-s"])
+    pytest.main([__file__ + "::test_read_text_from_anonymized_box", "-s"])
