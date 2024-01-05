@@ -195,6 +195,7 @@ def test_read_text_from_anonymized_box(
         ("tests/data/processor/page_with_boxes_3.png", 6),
         ("tests/data/processor/page_with_boxes_4.png", 22),
         ("tests/data/processor/page_with_boxes_5.png", 4),
+        ("tests/data/processor/page_with_boxes_6.png", 14),
     ],
 )
 def test_find_anonymized_boxes(pdf_text_reader, image_path, n_matches_expected):

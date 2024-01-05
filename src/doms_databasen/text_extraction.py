@@ -1876,12 +1876,9 @@ class PDFTextReader:
         )
         inverted = cv2.bitwise_not(binary)
 
-        # closing
-        closed = cv2.morphologyEx(inverted, cv2.MORPH_CLOSE, np.ones((10, 10)))
-
         # Some boxes are overlapping (horizontally).
         # Split them into separate boxes.
-        inverted_boxes_split = self._split_boxes_in_image(inverted=closed.copy())
+        inverted_boxes_split = self._split_boxes_in_image(inverted=inverted.copy())
 
         binary_splitted = self._make_split_between_overlapping_box_and_line(
             binary=inverted_boxes_split

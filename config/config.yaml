@@ -53,7 +53,7 @@ refine_box_padding: 2
 make_split_between_overlapping_box_and_line_height_max: 30
 make_split_between_overlapping_box_and_line_width: 10
 
-threshold_binarize_anonymized_boxes: 50
+threshold_binarize_anonymized_boxes: 75
 threshold_binarize_split_indices: 100
 threshold_binarize_empty_box: 100
 threshold_binarize_top_page: 230
@@ -141,7 +141,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "157"
+  case_id: "475"
   all: False
   messages:
     give_correct_input: >
