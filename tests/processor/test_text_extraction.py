@@ -179,7 +179,7 @@ def test_get_text_from_boxes(pdf_text_reader, boxes, text_expected):
             "tests/data/processor/get_text_from_box_8.png",
             {"coordinates": [1886, 1112, 1942, 1229], "origin": "box"},
             False,
-            "<anonym>P 1</anonym>",
+            "<anonym>P1</anonym>",
         )
     ],
 )

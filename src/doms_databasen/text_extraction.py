@@ -1658,6 +1658,8 @@ class PDFTextReader:
             score (float):
                 Score of result.
         """
+        if len(result) == 0:
+            return 0
         n_boxes = len(result)
 
         # Averge confidence score
