@@ -509,13 +509,14 @@ class PDFTextReader:
                 image=crop, binarize_threshold=self.config.threshold_binarize_empty_box
             ):
                 continue
-            crop_to_read = self._process_crop_before_read(
+            crops_to_read = self._process_crop_before_read(
                 crop=crop,
                 binary_threshold=self.config.threshold_binarize_empty_box,
                 refine_padding=self.config.cell_box_crop_padding,
+                cell=True,
             )
 
-            text = self._read_text_from_crop(crop_to_read, cell=True)
+            text = self._read_text_from_crop(crops=crops_to_read, cell=True)
             all_text += f"{text}\n"
 
         # Remove last newline character
@@ -741,18 +742,24 @@ class PDFTextReader:
             val_max=255,
         )
 
-        blobs = self._get_blobs(binary=binary, sort_function=self._blob_bottom_length)
+        blobs = self._get_blobs(binary=binary, sort_function=self._blob_length)
 
         anonymized_boxes = []
         underlines = []
         for blob in blobs:
-            if self._blob_bottom_length(blob=blob) < self.config.underline_length_min:
+            if self._blob_length(blob=blob) < self.config.underline_length_min:
                 break
             underline = self._extract_underline(blob=blob)
             if not underline:
                 continue
 
-            row_min, col_min, _, col_max = underline
+            row_min, col_min, row_max, col_max = underline
+            height = row_max - row_min
+            if height > 20:
+                print("aloha")
+
+            binary[row_min:row_max + 1, col_min:col_max + 1] = 255
+            save_cv2_image_tmp(binary)
 
             expand = self.config.underline_box_expand
             box_row_min = row_min - self.config.underline_box_height
@@ -776,7 +783,7 @@ class PDFTextReader:
             )
             if not box_is_duplicate:
                 anonymized_boxes.append(anonymized_box)
-                underlines.append(blob.bbox)
+                underlines.append(underline)
 
         return anonymized_boxes, underlines
 
@@ -799,6 +806,7 @@ class PDFTextReader:
         rows, cols = blob.coords.transpose()
         col_min = cols.min()
         col_max = cols.max()
+
         rows_at_col_min = rows[cols == col_min]
         rows_at_col_max = rows[cols == col_max]
 
@@ -836,7 +844,7 @@ class PDFTextReader:
         return row_min, col_min, row_max + 1, col_max + 1
 
     @staticmethod
-    def _blob_bottom_length(blob: RegionProperties) -> int:
+    def _blob_length(blob: RegionProperties) -> int:
         """Number of pixels in the bottom row of the blob.
 
         Args:
@@ -847,10 +855,11 @@ class PDFTextReader:
             int:
                 Number of pixels in the bottom row of the blob.
         """
-        rows, _ = blob.coords.transpose()
-        last_row = rows.max()
-        last_row_indices = np.where(rows == last_row)[0]
-        length = len(last_row_indices)
+
+        _, cols = blob.coords.transpose()
+        col_min = cols.min()
+        col_max = cols.max()
+        length = col_max - col_min + 1
         return length
 
     def _make_split_between_overlapping_box_and_line(
@@ -1095,6 +1104,7 @@ class PDFTextReader:
 
         for anonymized_box in anonymized_boxes:
             row_min, col_min, row_max, col_max = anonymized_box["coordinates"]
+
             center = (row_min + row_max) // 2, (col_min + col_max) // 2
 
             if opened[center] != 255:
@@ -1137,7 +1147,7 @@ class PDFTextReader:
         """
         for underline in underlines:
             row_min, col_min, row_max, col_max = underline
-            image[row_min:row_max, col_min:col_max] = 0
+            image[row_min:row_max + 1, col_min:col_max + 1] = 0
         return image
 
     def _remove_text_in_anonymized_boxes(
@@ -1375,7 +1385,8 @@ class PDFTextReader:
         if not line:
             return True
         first_box = line[0]
-        return self._is_footnote(first_box)
+        ignore = self._is_footnote(first_box)
+        return ignore
 
     def _is_footnote(self, first_box: dict):
         """Checks if line is a footnote.
@@ -1523,12 +1534,12 @@ class PDFTextReader:
         )
 
         if len(anonymized_boxes) == 1:
-            crop_to_read = self._process_crop_before_read(
+            crops_to_read = self._process_crop_before_read(
                 crop=crop_refined,
                 binary_threshold=self.config.threshold_binarize_process_crop,
                 refine_padding=self.config.anonymized_box_crop_padding,
             )
-            text = self._read_text_from_crop(crop=crop_to_read)
+            text = self._read_text_from_crop(crops=crops_to_read)
             anonymized_box["text"] = f"<anonym>{text}</anonym>" if text else ""
             return anonymized_box
 
@@ -1543,14 +1554,14 @@ class PDFTextReader:
             ):
                 continue
 
-            crop_to_read = self._process_crop_before_read(
+            crops_to_read = self._process_crop_before_read(
                 crop=crop,
                 binary_threshold=self.config.threshold_binarize_process_crop,
                 refine_padding=self.config.anonymized_box_crop_padding,
             )
 
             # Read text from image with easyocr
-            text = self._read_text_from_crop(crop=crop_to_read)
+            text = self._read_text_from_crop(crops=crops_to_read)
 
             texts.append(text)
 
@@ -1578,7 +1589,7 @@ class PDFTextReader:
             and anonymized_box["origin"] == self.config.origin_underline
         )
 
-    def _read_text_from_crop(self, crop: np.ndarray, cell: bool = False) -> str:
+    def _read_text_from_crop(self, crops: List[np.ndarray], cell: bool = False) -> str:
         """Read text from crop.
 
         Args:
@@ -1589,19 +1600,21 @@ class PDFTextReader:
             text (str):
                 Text from crop.
         """
-        result = self.reader.readtext(crop)
-
-        if not result:
+        results = [self.reader.readtext(crop) for crop in crops]
+        if not any(results):
             return ""
+        if len(results) > 1:
+            result = self._best_result(results=results)
+        else:
+            result = results[0]
 
         boxes = [self._change_box_format(box) for box in result]
         boxes = self._remove_inner_boxes(boxes=boxes)
         boxes = self._sort_by_x(boxes=boxes)
-        # At this point I only see there to be > 1 box, if eg. a "," is read as "9".
+        # At this point I only see > 1 box, if eg. a "," is read as "9".
         # Therefore, just use text from first box
         if not cell:
             if len(boxes) > 1:
-                print("aloha")
                 assert boxes[1]["text"] == "9"
             box_first = boxes[0]
             text = box_first["text"]
@@ -1609,12 +1622,48 @@ class PDFTextReader:
         
         text = " ".join([box["text"] for box in boxes if box["confidence"] > self.config.threshold_box_confidence])
         return text
-        # text = boxes[0]["text"]
-        # for box in boxes[1:]:
-        #     sep = "" if text[-1] == "-" else " "
-        #     text += f"{sep}{box['text']}"
-        # return text
-    
+
+    def _best_result(self, results: List[List[tuple]]) -> List[tuple]:
+        """Returns the best result.
+
+        The best result is the result with the highest average confidence score.
+
+        Args:
+            results (List[List[tuple]]):
+                List of results from easyocr.
+
+        Returns:
+            result_best (List[tuple]):
+                Best result.
+        """
+        result_best = results[0]
+        result_best_score = self._result_score(result=result_best)
+        for result in results[1:]:
+            result_score = self._result_score(result=result)
+            if result_score > result_best_score:
+                result_best = result
+                result_best_score = result_score
+        return result_best
+
+    def _result_score(self, result: List[tuple]) -> List[tuple]:
+        """Calculates the score of a result.
+        
+        The score is the average confidence score.
+
+        Args:
+            result (List[tuple]):
+                Result from easyocr.
+
+        Returns:
+            score (float):
+                Score of result.
+        """
+        n_boxes = len(result)
+
+        # Averge confidence score
+        score = sum(box[2] for box in result) * 1/n_boxes
+        return score
+
     def _sort_by_x(self, boxes: List[dict]) -> List[dict]:
         """Sort boxes by x coordinate.
 
@@ -1728,7 +1777,7 @@ class PDFTextReader:
         return crop
 
     def _process_crop_before_read(
-        self, crop: np.ndarray, binary_threshold: int, refine_padding: int = 0
+        self, crop: np.ndarray, binary_threshold: int, refine_padding: int = 0, cell: bool = False
     ) -> np.ndarray:
         """Processes crop before reading text with easyocr.
 
@@ -1754,11 +1803,28 @@ class PDFTextReader:
         box_length = crop_refined.shape[1]
         scale = self._get_scale(box_length=box_length)
         crop_scaled = self._scale_image(image=crop_refined, scale=scale)
+
+        # Ensure that highest pixel value is 255, else sharpening might not work as expected.
+        crop_scaled = np.array(crop_scaled / crop_scaled.max() * 255, dtype=np.uint8)
+
         crop_boundary = self._add_boundary(
             image=crop_scaled, padding=self.config.anonymized_box_crop_padding
         )
-        crop_to_read = crop_boundary
-        return crop_to_read
+        if cell:
+            return [crop_boundary]
+        
+
+        sharpened = np.array(skimage.filters.unsharp_mask(crop_scaled, radius=20, amount=1), dtype=np.uint8) * 255
+        sharpened_boundary = self._add_boundary(
+            image=sharpened, padding=self.config.anonymized_box_crop_padding
+        )
+
+        crops_to_read = [
+            crop_boundary,
+            sharpened_boundary
+        ]
+
+        return crops_to_read
 
     def _get_scale(self, box_length: int) -> float:
         """Get scale to scale box/crop with.

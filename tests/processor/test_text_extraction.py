@@ -174,6 +174,12 @@ def test_get_text_from_boxes(pdf_text_reader, boxes, text_expected):
             {'coordinates': [3016, 389, 3065, 641], "origin": "underline"},
             True,
             "<anonym>Tiltaltelsigtede</anonym>",
+        ),
+        (
+            "tests/data/processor/get_text_from_box_8.png",
+            {"coordinates": [1886, 1112, 1942, 1229], "origin": "box"},
+            False,
+            "<anonym>P 1</anonym>",
         )
     ],
 )
@@ -332,4 +338,4 @@ def test_get_row_indices_to_split(pdf_text_reader, image_path, rows_to_split_exp
 
 
 if __name__ == "__main__":
-    pytest.main([__file__ + "::test_find_anonymized_boxes", "-s"])
+    pytest.main([__file__ + "::test_read_text_from_anonymized_box", "-s"])

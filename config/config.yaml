@@ -79,7 +79,7 @@ underline_box_height_min: 32
 underline_box_expand: 3
 threshold_binarize_line_anonymization: 255
 
-line_start_ignore_col: 1200
+line_start_ignore_col: 1250
 line_start_ignore_row: 3000
 
 max_expand_steps: 10
@@ -141,7 +141,7 @@ scrape:
 # Process arguments
 process:
   force: True
-  case_id: "475"
+  case_id: "1116"
   all: False
   messages:
     give_correct_input: >
