@@ -5,7 +5,14 @@ Scraping af [domsdatabasen](https://domsdatabasen.dk/#), der for nyligt er udgiv
 
 Hver enkelt dom kan tilgås via https://domsdatabasen.dk/#sag/\<nummer\>, hvor \<nummer\> er mellem 1 og 3821 (pr. 11-10-2023).
 
-For scraping af sager, se `src/scripts/scrape.py`.
+## Scraping af sager
+Se `src/scripts/scrape.py`.
+
+## Processing af scraped data
+Se `src/scripts/process.py`.
+
+## Finalize data
+Se `src/scripts/finalize.py`.
 
 ______________________________________________________________________
 [![Documentation](https://img.shields.io/badge/docs-passing-green)](https://alexandrainst.github.io/doms_databasen/doms_databasen.html)

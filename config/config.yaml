@@ -11,27 +11,149 @@ domsdatabasen:
 paths:
   download_dir: download_tmp/
   data_raw_dir: data/raw/
-  test_dir: tmp/
-  test_case_dir: test_case/
+  data_processed_dir: data/processed/
+  data_final_dir: data/final/
+  test_tmp_dir: tmp/
+  # Paths for testing the processor
+  test_data_raw_dir: tests/data/processor/raw/
+  # test_case_dir: test_case/
 
 file_names:
   tabular_data: tabular_data.json
   pdf_document: document.pdf
-
-messages:
-  give_correct_inputs: >
-    Please specify either a case ID using the case_id 
-    argument or use --scrape_all to scrape all cases
+  processed_data: processed_data.json
+  dataset: dataset.jsonl
 
 # Constants
+## Scrape
 sleep: 5
+max_consecutive_nonexistent_page_count: 100
 
-# Testing
+## Process
+gpu: False
+
+max_y_difference: 25
+
+neighbor_distance_max: 1
+
+box_area_min: 2500
+box_height_min: 35
+box_width_min: 35
+box_accept_ratio: 0.6
+slight_shift_to_bottom: 5
+iou_overlap_threshold: 0.5
+indices_to_split_edge_min_length: 5
+indices_to_split_row_diff: 50
+max_scale: 1.5
+
+anonymized_box_crop_padding: 3
+
+refine_box_padding: 2
+
+make_split_between_overlapping_box_and_line_height_max: 30
+make_split_between_overlapping_box_and_line_width: 10
+
+threshold_binarize_anonymized_boxes: 75
+threshold_binarize_split_indices: 100
+threshold_binarize_empty_box: 100
+threshold_binarize_top_page: 230
+threshold_gap: 11
+threshold_box_confidence: 0.3
+threshold_binarize_process_crop: 200
+threshold_remove_boundary_height: 20
+threshold_remove_boundary_length: 50
+threshold_remove_boundary_closely_square: 3
+threshold_remove_boundary_too_few_pixels: 10
+
+threshold_footnote_height: 30 # Some less than box height lb
+
+invert_find_anonymized_boxes: False
+invert_find_underline_anonymizations: True
+
+underline_length_min: 26
+underline_height_lower_bound: 2
+underline_height_upper_bound: 7
+underline_remove_pad: 1
+underline_box_height: 50
+underline_box_height_min: 32
+underline_box_expand: 3
+threshold_binarize_line_anonymization: 255
+
+line_start_ignore_col: 1250
+line_start_ignore_row: 3000
+
+max_expand_steps: 10
+
+remove_cell_border: 5
+cell_box_shrink: 5
+cell_box_crop_padding: 21
+cell_multiple_lines_gap_threshold: 10
+
+table_format: grid
+remove_table_border: 7
+threshold_binarize_process_before_table_search: 1
+
+origin_box: box
+origin_underline: underline
+
+message_pdf_has_no_anonymized_boxes: >
+  No anonymized boxes detected on first page 1.
+  Therefore, there will not be searched for
+  anonymized boxes on the following pages.
+message_pdf_has_no_underline_anonymizations: >
+  No underline anonymization detected on page 1.
+  Therefore, there will not be searched for
+  underlines anonymization on the following pages.
+
+message_case_not_found: >
+  The case was not found. 
+  Case id:
+message_case_already_processed: >
+  The case has already been processed. Use 'process.force' to overwrite
+  Case id:
+message_processing_case: >
+  Processing case:
+message_case_done: >
+  Done with case:
+message_processing_all_cases: >
+  Processing all cases.
+
 testing: False
-test_case_name: test_case
-test_case_id: "1"
 
-# Arguments
-force: False
-case_id: "1"
-scrape_all: False
+### Remove logo on first page
+page_from_top_to_this_row: 500
+logo_bbox_area_threshold: 50000
+
+# Scrape arguments
+scrape:
+  force: False
+  case_id: "1"
+  all: False
+  messages:
+    give_correct_input: >
+      Please specify either a 'case_id'
+      or use 'all' to scrape all cases.
+    done: >
+      Scraping done!
+  test_case_name: test_case
+  test_case_id: "1"
+
+# Process arguments
+process:
+  force: True
+  case_id: "1116"
+  all: False
+  messages:
+    give_correct_input: >
+      Please specify either a 'case_id'
+      or use 'all' to process all cases.
+    done: >
+      Processing done!
+  test_case_id: "1"
+
+## Debug
+image_idx: False # page number
+
+# Finalize arguments
+finalize:
+  force: False

@@ -5,7 +5,7 @@ import pytest
 
 @pytest.fixture(scope="module")
 def test_case_path(config):
-    return Path(config.paths.test_dir) / config.test_case_name
+    return Path(config.paths.test_dir) / config.scrape.test_case_name
 
 
 def test_case_contains_pdf(config, test_case_path):
